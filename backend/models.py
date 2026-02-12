@@ -101,6 +101,10 @@ class CatalogDatabase:
                 sha256_hash TEXT,
                 file_id INTEGER,
                 exif_data_id INTEGER,
+                modification_time TEXT,
+                access_time TEXT,
+                change_time TEXT,
+                creation_time TEXT,
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (exif_data_id) REFERENCES exif_data (id) ON DELETE SET NULL
             )
@@ -383,7 +387,9 @@ class CatalogModel:
     
     def add_file(self, catalog_id: int, file_path: str, file_name: str,
                  file_size: int, file_type: str, file_permissions: Optional[str] = None,
-                 sha256_hash: Optional[str] = None, exif_data_id: Optional[int] = None):
+                 sha256_hash: Optional[str] = None, exif_data_id: Optional[int] = None,
+                 modification_time: Optional[str] = None, access_time: Optional[str] = None,
+                 change_time: Optional[str] = None, creation_time: Optional[str] = None):
         """Add file to catalog-specific database"""
         catalog_db = self.get_catalog_db(catalog_id)
         if not catalog_db:
@@ -392,9 +398,11 @@ class CatalogModel:
         conn = catalog_db.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO file_contents (file_path, file_name, file_size, file_type, file_permissions, sha256_hash, exif_data_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (file_path, file_name, file_size, file_type, file_permissions, sha256_hash, exif_data_id))
+            INSERT INTO file_contents (file_path, file_name, file_size, file_type, file_permissions, sha256_hash, exif_data_id,
+                                      modification_time, access_time, change_time, creation_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (file_path, file_name, file_size, file_type, file_permissions, sha256_hash, exif_data_id,
+              modification_time, access_time, change_time, creation_time))
         file_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -471,6 +479,10 @@ class CatalogModel:
                 fc.file_permissions,
                 fc.sha256_hash,
                 fc.exif_data_id,
+                fc.modification_time,
+                fc.access_time,
+                fc.change_time,
+                fc.creation_time,
                 fc.added_at,
                 ed.creation_date,
                 ed.latitude,

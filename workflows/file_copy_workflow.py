@@ -155,6 +155,49 @@ def calculate_sha256(file_path):
         print(f"Error calculating SHA256 for {file_path}: {e}")
         return None
 
+def get_file_timestamps(file_path):
+    """
+    Extract all filesystem timestamps from a file.
+    Returns a dictionary with modification_time, access_time, change_time, and creation_time.
+    
+    Returns:
+        dict: Dictionary containing timestamp information as ISO format strings
+    """
+    try:
+        stat_info = os.stat(file_path)
+        
+        # Modification time (mtime) - when file content was last modified
+        modification_time = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
+        
+        # Access time (atime) - when file was last accessed
+        access_time = datetime.fromtimestamp(stat_info.st_atime).isoformat()
+        
+        # Change time (ctime) - when file metadata was last changed (Unix) or creation time (Windows)
+        change_time = datetime.fromtimestamp(stat_info.st_ctime).isoformat()
+        
+        # Creation time (birthtime) - available on macOS and Windows
+        creation_time = None
+        if hasattr(stat_info, 'st_birthtime'):
+            creation_time = datetime.fromtimestamp(stat_info.st_birthtime).isoformat()
+        else:
+            # On Linux, st_birthtime is not available, use ctime as fallback
+            creation_time = change_time
+        
+        return {
+            'modification_time': modification_time,
+            'access_time': access_time,
+            'change_time': change_time,
+            'creation_time': creation_time
+        }
+    except Exception as e:
+        print(f"Error extracting timestamps from {file_path}: {e}")
+        return {
+            'modification_time': None,
+            'access_time': None,
+            'change_time': None,
+            'creation_time': None
+        }
+
 def is_image_file(file_path):
     """Check if file is an image based on extension"""
     image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif'}
@@ -291,7 +334,7 @@ def execute(source_dir, target_dir, files, progress_callback, catalog_id=None):
         )
     ''')
     
-    # Create file_contents table in results database with sha256_hash and file_id
+    # Create file_contents table in results database with sha256_hash, file_id, and timestamp fields
     results_cursor.execute('''
         CREATE TABLE IF NOT EXISTS file_contents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,6 +346,10 @@ def execute(source_dir, target_dir, files, progress_callback, catalog_id=None):
             sha256_hash TEXT,
             file_id INTEGER,
             exif_data_id INTEGER,
+            modification_time TEXT,
+            access_time TEXT,
+            change_time TEXT,
+            creation_time TEXT,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (exif_data_id) REFERENCES exif_data(id)
         )
@@ -413,16 +460,22 @@ def execute(source_dir, target_dir, files, progress_callback, catalog_id=None):
             except:
                 file_permissions = None
             
+            # Extract filesystem timestamps
+            timestamps = get_file_timestamps(file_path)
+            
             # EXIF data was already extracted earlier (if applicable)
             exif_id = None
             
             # Add file to catalog's local database (workflow_results.db) FIRST to get file_id
-            # Use new_filename for storage
+            # Use new_filename for storage and include timestamp fields
             results_cursor.execute('''
                 INSERT INTO file_contents
-                (file_path, file_name, file_size, file_type, file_permissions, sha256_hash, file_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (target_path, new_filename, file_size, file_type, file_permissions, sha256_hash, None))
+                (file_path, file_name, file_size, file_type, file_permissions, sha256_hash, file_id,
+                 modification_time, access_time, change_time, creation_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (target_path, new_filename, file_size, file_type, file_permissions, sha256_hash, None,
+                  timestamps['modification_time'], timestamps['access_time'],
+                  timestamps['change_time'], timestamps['creation_time']))
             file_id = results_cursor.lastrowid  # This is our unique file_id
             
             # Update the file_id column to match the id (for consistency)
