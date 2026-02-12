@@ -1,0 +1,6 @@
+Flask==3.0.0
+Flask-CORS==4.0.0
+Flask-SocketIO==5.3.5
+python-socketio==5.10.0
+eventlet==0.33.3
+Pillow==10.1.0
