@@ -1,0 +1,5 @@
+# Copied in from ../backend/workflows/lib by start-podman.sh before each build,
+# so the image carries the same module the import uses. Not a second copy to edit.
+video_proxy.py
+venv/
+__pycache__/

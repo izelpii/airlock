@@ -1,0 +1,80 @@
+# Podman Kubernetes pod manifest for the video transcode backend.
+#
+# Build the image first (from the repository root):
+#   cp systems/backend/workflows/lib/video_proxy.py systems/backend-transcode/
+#   podman build --ulimit nofile=65536:65536 \
+#                --ignorefile systems/backend-transcode/.dockerignore \
+#                -f systems/backend-transcode/Dockerfile \
+#                -t backend-transcode systems/backend-transcode/
+#
+# The copy is not optional: the image carries the SAME video module the import
+# uses, and start-podman.sh does that copy for you (it is gitignored here).
+#
+# Run with:
+#   podman play kube systems/backend-transcode/backend-transcode-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down systems/backend-transcode/backend-transcode-pod.yaml
+#
+# ── THIS IS THE CPU BASELINE, AND START-PODMAN.SH IS THE REAL LAUNCHER ───────
+# Three things the script decides at run time, which a static manifest cannot:
+#
+#   1. GPU passthrough (--device nvidia.com/gpu=all) when AIRLOCK_GPU=1
+#   2. /dev/dri and /dev/video11, passed only when they EXIST, plus
+#      --group-add keep-groups so a rootless container can actually open them
+#   3. TRANSCODE_VAAPI_DEVICE / TRANSCODE_JOBS / TRANSCODE_ENCODER, each passed
+#      only when set in the environment
+#
+# So this manifest encodes the mode that works everywhere - CPU - and the
+# service's own hardware probe reports what it ended up with. On a Mac that is
+# all there is anyway: podman's VM has no /dev/dri, and VideoToolbox is the
+# reason start-host.sh exists.
+#
+# accelerated-services-spec.md section 3.2.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-transcode
+  labels:
+    app: backend-transcode
+spec:
+  containers:
+    - name: backend-transcode
+      image: localhost/backend-transcode:latest
+
+      ports:
+        - containerPort: 5004
+          hostPort: 5004
+          protocol: TCP
+
+      env:
+        # What the service reports about itself, and what the script sets to
+        # "gpu" when it passed a GPU in. Keep it honest: claiming acceleration
+        # the container did not get makes the Alerts page lie about why
+        # previews are slow.
+        - name: TRANSCODE_MODE
+          value: "container"
+
+      volumeMounts:
+        # The catalogs, READ-WRITE: proxies and posters are written under each
+        # catalog's cache/. Same mount as the backend, so a file has the same
+        # owner whichever of the two produced it.
+        - name: catalogs
+          mountPath: /catalogs
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    # To move this to another machine, change this one path. The script reads
+    # it from CATALOGS_HOST_DIR in deploy/airlock-env.sh; a manifest has no
+    # variables, so it is spelled out and has to be edited.
+    - name: catalogs
+      hostPath:
+        path: ../../catalogs
+        type: DirectoryOrCreate

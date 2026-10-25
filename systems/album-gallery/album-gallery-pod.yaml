@@ -1,0 +1,82 @@
+# Podman Kubernetes pod manifest for album-gallery.
+#
+# Build the image first:
+#   podman build -t album-gallery .
+#
+# Run with:
+#   podman play kube album-gallery-pod.yaml
+#
+# Because podman play kube does not interpolate shell variables in hostPath,
+# edit the hostPath.path value below before running.
+#
+# Tear down with:
+#   podman play kube --down album-gallery-pod.yaml
+#
+# This manifest and start-podman.sh must declare the same ports, environment
+# and mounts. systems/test_pod_manifests.py fails when they drift — the check
+# that caught gateway-pod.yaml shipping without its TLS listener.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: album-gallery
+  labels:
+    app: album-gallery
+spec:
+  containers:
+    - name: album-gallery
+      image: localhost/album-gallery:latest
+
+      ports:
+        - containerPort: 3001
+          hostPort: 3001
+          protocol: TCP
+
+      env:
+        # Must match the mountPath of the catalogs volume below. Deployments
+        # live at <catalog>/cache/Deployments/<slug>/, and the URL names the
+        # catalog by slug: /d/family/summer-2019/ resolves to
+        # /catalogs/<the directory catalogs.json gives for "family">/cache/
+        # Deployments/summer-2019/.
+        - name: CATALOGS_ROOT
+          value: /catalogs
+
+        # Signs the session cookie for password-protected deployments. Leave it
+        # empty and the server generates a key at boot, logs that it did, and
+        # signs everyone out on every restart.
+        - name: ALBUM_SESSION_SECRET
+          value: ""
+
+      volumeMounts:
+        - name: catalogs
+          mountPath: /catalogs
+          readOnly: true
+
+      # Keep the container from running as root.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    # The catalogs root: the SAME directory the backend mounts at /catalogs.
+    # Both must point at the same place, or a deployment the backend publishes
+    # resolves in one container and not the other.
+    #
+    # Read-only, and the server never writes. It also holds more than a gallery
+    # should serve — the originals (RAW/HEIC), workflow_results.db, the face
+    # crops — so the server withholds them by rule rather than by mount: every
+    # asset path is realpath-resolved and must land under that catalog's cache/,
+    # the album folder must appear in the deployment's manifest, and no path
+    # component may begin with a dot.
+    #
+    # Mounting only one catalog's cache/, as this manifest used to, cannot
+    # express more than one catalog — which is what a deployment needs.
+    #
+    # To move to a new machine, update this hostPath.
+    - name: catalogs
+      hostPath:
+        path: /Users/izelpi/Personal/Development/shoebox/catalogs
+        type: DirectoryOrCreate

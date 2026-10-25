@@ -1,0 +1,19 @@
+__pycache__
+.pytest_cache
+venv
+face_labels.db
+uploads
+database_images
+deepface.log
+=*
+*.pyc
+*.pyo
+.vscode
+*.md
+.gitignore
+# 114 MB of model weights - mounted at runtime, never needed in the build context
+deepface_weights
+# local processing database volume
+data
+# host-mode symlink to deepface_weights (container mounts its own)
+.deepface

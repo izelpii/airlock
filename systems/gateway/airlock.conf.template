@@ -1,0 +1,382 @@
+# ─── airlock gateway ──────────────────────────────────────────────────────────
+#
+# One listener on :80 that routes by Host header, so services stop being
+# addressed by port. See documentation/specs/redesign-ports-routes-spec.md.
+#
+# ${UPSTREAM_HOST} is substituted at container start (nginx's envsubst
+# templating, restricted to that one name by NGINX_ENVSUBST_FILTER so nginx's
+# own $host / $remote_addr variables are left alone). It is
+# host.containers.internal in a pod and localhost when the gateway is run
+# directly on the host.
+#
+# This file is the ONLY place in the system that still knows a port number.
+# That is the point of the migration: the ports still exist, but nothing in the
+# application refers to them.
+
+# Default timeouts, at http level so every location inherits them and the two
+# that need longer can override without a duplicate-directive error. nginx
+# defaults to 60 s, which would cut off backend-vision mid-description - its own
+# gunicorn timeout is 600 s.
+proxy_connect_timeout 10s;
+proxy_send_timeout    600s;
+proxy_read_timeout    600s;
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream airlock_frontend { server ${UPSTREAM_HOST}:3000; }
+upstream airlock_gallery  { server ${UPSTREAM_HOST}:3001; }
+upstream airlock_backend  { server ${UPSTREAM_HOST}:5000; }
+upstream airlock_deepface { server ${UPSTREAM_HOST}:5001; }
+upstream airlock_geoloc   { server ${UPSTREAM_HOST}:5002; }
+upstream airlock_vision   { server ${UPSTREAM_HOST}:5003; }
+upstream airlock_albums   { server ${UPSTREAM_HOST}:5005; }
+upstream airlock_pets     { server ${UPSTREAM_HOST}:5006; }
+upstream airlock_ollama   { server ${UPSTREAM_HOST}:11434; }
+
+# ── Port 80: redirect to HTTPS ────────────────────────────────────────────────
+# default_server only, so it catches the browser origin and unknown names. The
+# internal service blocks below declare their own server_name on :80 and match
+# first - they are service-to-service plumbing behind the gateway and stay
+# plaintext. See user-authentication-spec.md section 10.1.
+server {
+    listen 80 default_server;
+    server_name _;
+
+    # Must stay HTTP and must NOT redirect: HTTP-01 certificate validation for a
+    # future public domain fetches this path over plain 80. Useless today,
+    # three lines, and its absence is confusing to diagnose later - section 10.5.
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location = /gateway-health {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "gateway ok (http)\n";
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ── The browser's origin ──────────────────────────────────────────────────────
+# UI and API on one origin. This is what keeps the backend address out of the
+# compiled JavaScript bundle - see section 5 of the spec. default_server so a
+# bare IP or an unknown name still reaches the UI rather than failing obscurely.
+#
+# ${SERVER_DOMAIN} is substituted at container start alongside ${UPSTREAM_HOST}.
+# Moving to a public domain is therefore an environment variable, not a rebuild.
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name ${SERVER_DOMAIN} localhost;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # No Strict-Transport-Security while the certificate is privately signed:
+    # HSTS is not revocable from the server side and would pin every device.
+    # Enable it only behind a publicly trusted certificate - section 10.6.
+
+    location = /gateway-health {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "gateway ok\n";
+    }
+
+    # ── The gallery's own health ──────────────────────────────────────────
+    # So the application can show whether a published link would actually
+    # open. Same origin as the UI, so the browser asks for it directly and no
+    # backend route has to exist to relay it - and it tests the path a VIEWER
+    # takes, which a backend-to-gallery probe does not.
+    #
+    # NOT under /gallery/. That prefix is rewritten to /d/ and everything below
+    # it is <catalog>/<deployment>, so /gallery/health would be read as a
+    # catalog named "health" and 404. A sibling name keeps the deployment URL
+    # space undivided.
+    #
+    # Short timeouts, overriding the 600 s this file sets at http level for
+    # backend-vision: a health check that hangs for ten minutes reports nothing
+    # and holds a connection while it does. Connection refused answers at once;
+    # these bound the cases that do not.
+    location = /gallery-health {
+        access_log off;
+        proxy_pass http://airlock_gallery/health;
+        include /etc/nginx/proxy.conf;
+        proxy_connect_timeout 2s;
+        proxy_send_timeout    5s;
+        proxy_read_timeout    5s;
+    }
+
+    # No trailing slash on proxy_pass: the backend expects the /api prefix.
+    location /api/ {
+        proxy_pass http://airlock_backend;
+        include /etc/nginx/proxy.conf;
+    }
+
+    # Socket.IO. The backend runs gthread with async_mode='threading', so this
+    # negotiates HTTP long-polling rather than websockets, while the client still
+    # asks for websocket first and falls back. Buffering a long poll would hold
+    # the response until it filled, which reads as "progress bars never move" -
+    # the app keeps working and nothing errors.
+    location /socket.io/ {
+        proxy_pass http://airlock_backend;
+        include /etc/nginx/proxy.conf;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
+    # Trailing slash strips the prefix: /vision/describe -> /describe
+    location /vision/ {
+        proxy_pass http://airlock_vision/;
+        include /etc/nginx/proxy.conf;
+    }
+
+    location /geoloc/ {
+        proxy_pass http://airlock_geoloc/;
+        include /etc/nginx/proxy.conf;
+    }
+
+    # NO `location /pets/` HERE, AND THAT IS THE POINT.
+    #
+    # There was one. Its comment said backend-pets "is reached only by the
+    # backend and its workflows, never by a browser ... routed here anyway so
+    # the service naming is uniform and curl-ing it over https works; it costs
+    # nothing."
+    #
+    # It cost the Pets page. /pets is a FRONTEND ROUTE, so this block shadowed
+    # it: https://airlock.lan/pets 301'd to /pets/ and /pets/ returned the pet
+    # detector's 404. Clicking Pets inside the app still worked, because the
+    # router never asks the server - so it broke exactly reloading, bookmarking
+    # and sharing that URL, and only those.
+    #
+    # backend-pets is reached as pets.airlock.lan, which has its own server
+    # block below and is what the backend actually uses. A path route for a
+    # service nothing reaches by path is not uniformity; it is a reserved word
+    # taken out of the application's own namespace.
+    #
+    # systems/test_service_names.py now fails if any location /<x>/ collides
+    # with a route in App.js.
+
+    # ── Album deployments, path form ──────────────────────────────────────
+    # https://airlock.lan/gallery/family/summer-2019
+    #
+    # The trailing slash on proxy_pass strips /gallery/ and prepends /d/, so
+    #   /gallery/family/summer-2019  ->  /d/family/summer-2019
+    # which is exactly what the gallery serves. One block, no DNS work and no
+    # certificate work: this reaches any machine that can already reach
+    # airlock.lan, which is what makes it the form that works today.
+    #
+    # NOT /albums/, which albums-enhancement-spec.md originally chose. The
+    # application ALREADY owns that prefix - /albums, /albums/deployments,
+    # /albums/words/<id>, /albums/tools/<id> are its own client-side routes, and
+    # a hard refresh on any of them is a real request to this server. Proxying
+    # /albums/ here sends those to the gallery, so the Deployments page and both
+    # album editors return the gallery's shell instead of the application. It
+    # fails only on refresh or on a pasted link, which is exactly the kind of
+    # breakage that ships.
+    #
+    # The gallery redirects a bare deployment URL to add a trailing slash, and
+    # it does so with a RELATIVE Location, so the browser stays under /gallery/
+    # rather than being sent to a /d/ path that does not exist from out here.
+    location /gallery/ {
+        proxy_pass http://airlock_gallery/d/;
+        include /etc/nginx/proxy.conf;
+    }
+
+    location / {
+        proxy_pass http://airlock_frontend;
+        include /etc/nginx/proxy.conf;
+    }
+}
+
+# ── Album deployments, subdomain form ─────────────────────────────────────────
+# https://family.airlock.lan/summer-2019
+#
+# Unaffected by the /gallery/ rename above: this form has no path prefix at
+# all, so it never collided with the application's routes.
+#
+# The label is the CATALOG; the deployment stays in the path. That is not a
+# stylistic choice - a TLS wildcard matches EXACTLY ONE label, verified against
+# this installation's own certificate:
+#
+#   https://one.airlock.lan          matched cert's "*.airlock.lan"   -> HTTP 200
+#   https://two.levels.airlock.lan   subjectAltName does not match    -> fails
+#
+# So <deployment>.<catalog>.airlock.lan would need a SAN per catalog and a
+# re-trust on every device each time a catalog is created. Putting the CATALOG
+# in the label needs no certificate change, ever - make-certs.sh already emits
+# DNS:*.airlock.lan. It also reads as what it is: a catalog is a site, its
+# deployments are pages in it.
+#
+# $catalog comes from the Host header and is NEVER joined to a path. This regex
+# constrains it to a DNS label - the same grammar the backend validates slugs
+# with - the gallery resolves it through catalogs.json rather than by joining,
+# and the result is realpath-contained. Three checks, because this route is
+# reachable from outside.
+#
+# What is still missing is only DNS: /etc/hosts has no wildcards, so today each
+# CATALOG needs one line - not each deployment, which is what makes the manual
+# workaround usable. dnsmasq (address=/airlock.lan/127.0.0.1) or a public
+# wildcard A record removes it entirely.
+# Plain :80 redirects, exactly as the browser origin does. A deployment link is
+# the one URL in this system most likely to be opened by someone who typed it,
+# forwarded it, or clicked it from a message - it should not be the one that
+# quietly stays on HTTP. The service-name blocks below are different: they are
+# service-to-service plumbing behind the gateway.
+server {
+    listen 80;
+    # QUOTED: nginx reads an unquoted { as the start of a block, so the {1,38}
+    # repetition makes the directive unparseable and the gateway will not start.
+    server_name "~^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]\.airlock\.lan$";
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    # Quoted for the same reason as the :80 block above. $catalog is captured
+    # here because this is the block that proxies.
+    server_name "~^(?<catalog>[a-z0-9][a-z0-9-]{1,38}[a-z0-9])\.airlock\.lan$";
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    location / {
+        # $request_uri, not a bare /d/$catalog/. nginx performs its usual
+        # "replace the matched location prefix" only when proxy_pass contains no
+        # variables; with $catalog in it, the URI is sent EXACTLY as written and
+        # the rest of the path is dropped - so /summer-2019/albums.json arrived
+        # as /d/family/ and every deployment served the application shell.
+        #
+        # $request_uri is the raw, still-encoded path, which keeps filenames with
+        # spaces intact. It can therefore contain ".." - and the gallery rejects
+        # any path component beginning with a dot before it looks at anything,
+        # which is the check that makes passing it raw safe.
+        proxy_pass http://airlock_gallery/d/$catalog$request_uri;
+        include /etc/nginx/proxy.conf;
+    }
+}
+
+# ── Old names: shoebox.lan, before the rename to airlock (v5.6.4) ─────────────
+# Every link anybody kept or shared still works: the old name answers with a
+# permanent redirect to the same path on the new one. No end date - it costs
+# these two blocks, and an album link sent to family is the kind of thing that
+# is opened years later. documentation/specs/name-migration-spec.md, phase 4.
+#
+# Exact names are matched before regular expressions, so the bare old domain
+# needs its own block; the catalog subdomains are one expression. The internal
+# service names (backend.shoebox.lan, ...) are listed on their own blocks below
+# and are matched first, by exact name, so they never reach this redirect.
+# The leaf certificate keeps *.shoebox.lan among its SANs for these.
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name shoebox.lan;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    return 301 https://${SERVER_DOMAIN}$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    # Quoted for the same reason as the catalog blocks above.
+    server_name "~^(?<old_catalog>[a-z0-9][a-z0-9-]{1,38}[a-z0-9])\.shoebox\.lan$";
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    return 301 https://$old_catalog.airlock.lan$request_uri;
+}
+
+# ── Service names ─────────────────────────────────────────────────────────────
+# For service-to-service calls, curl, and reaching one backend directly. These
+# are never compiled into the frontend bundle.
+
+server {
+    listen 80;
+    server_name backend.airlock.lan backend.shoebox.lan;
+    location /socket.io/ {
+        proxy_pass http://airlock_backend;
+        include /etc/nginx/proxy.conf;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+    location / { proxy_pass http://airlock_backend; include /etc/nginx/proxy.conf; }
+}
+
+# backend-deepface runs on the HOST, not in a pod: Apple's Metal stack has no
+# passthrough into podman's Linux VM. ${UPSTREAM_HOST} reaches it either way.
+server {
+    listen 80;
+    server_name deepface.airlock.lan deepface.shoebox.lan;
+    location / { proxy_pass http://airlock_deepface; include /etc/nginx/proxy.conf; }
+}
+
+server {
+    listen 80;
+    server_name vision.airlock.lan vision.shoebox.lan;
+    location / { proxy_pass http://airlock_vision; include /etc/nginx/proxy.conf; }
+}
+
+server {
+    listen 80;
+    server_name geoloc.airlock.lan geoloc.shoebox.lan;
+    location / { proxy_pass http://airlock_geoloc; include /etc/nginx/proxy.conf; }
+}
+
+server {
+    listen 80;
+    server_name pets.airlock.lan pets.shoebox.lan;
+    location / { proxy_pass http://airlock_pets; include /etc/nginx/proxy.conf; }
+}
+
+server {
+    listen 80;
+    server_name albums.airlock.lan albums.shoebox.lan;
+    location / { proxy_pass http://airlock_albums; include /etc/nginx/proxy.conf; }
+}
+
+server {
+    listen 80;
+    server_name gallery.airlock.lan gallery.shoebox.lan;
+    location / { proxy_pass http://airlock_gallery; include /etc/nginx/proxy.conf; }
+}
+
+# Ollama is external and host-native; naming it here lets backend-vision and
+# backend-albums stop hardcoding host.containers.internal:11434.
+server {
+    listen 80;
+    server_name ollama.airlock.lan ollama.shoebox.lan;
+    location / {
+        proxy_pass http://airlock_ollama;
+        include /etc/nginx/proxy.conf;
+        proxy_read_timeout 900s;    # model load + generation on a cold start
+    }
+}

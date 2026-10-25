@@ -1,0 +1,32 @@
+# airlock service names. Append these to /etc/hosts on any machine whose browser
+# or shell should reach the stack by name:
+#
+#   sudo sh -c 'cat systems/gateway/hosts-entries.txt >> /etc/hosts'
+#
+# /etc/hosts has no wildcard support, so a new service needs a new line here.
+# With ten names that is fine; past that, use the dnsmasq option in section 6.2
+# of documentation/specs/redesign-ports-routes-spec.md, which covers
+# *.airlock.lan with one rule and also serves phones and other machines.
+#
+# Containers do NOT read this file. They get the same names through hostAliases
+# in their pod manifests.
+#
+# These names carry no port, which requires the gateway to listen on :80.
+# Rootless podman refuses privileged ports until the podman machine's floor is
+# lowered - one command, and it only affects that VM:
+#
+#   systems/gateway/enable-port-80.sh
+#
+# If you would rather not, the gateway runs on 8080 and every name then needs
+# :8080 appended when you type it:  systems/gateway/enable-port-80.sh --port-8080
+
+127.0.0.1   airlock.lan
+127.0.0.1   backend.airlock.lan
+127.0.0.1   deepface.airlock.lan
+127.0.0.1   vision.airlock.lan
+127.0.0.1   geoloc.airlock.lan
+127.0.0.1   albums.airlock.lan
+127.0.0.1   gallery.airlock.lan
+127.0.0.1   ollama.airlock.lan
+127.0.0.1   transcode.airlock.lan
+127.0.0.1   pets.airlock.lan

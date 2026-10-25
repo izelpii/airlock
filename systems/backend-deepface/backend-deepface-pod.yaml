@@ -1,0 +1,123 @@
+# ⚠ CPU-ONLY FALLBACK — the preferred way to run this service is on the host.
+#
+# Podman on macOS runs containers inside a Linux VM, and Apple's Metal GPU stack
+# is macOS-native with no passthrough into a Linux guest. Running backend-deepface
+# in a container is therefore CPU-only, always. On Apple Silicon use:
+#
+#     ./start-host.sh --setup     # installs tensorflow-metal
+#     ./start-host.sh             # runs natively, GPU-accelerated
+#
+# The main backend already points at the host (DEEPFACE_URL =
+# http://deepface.airlock.lan through the gateway), and this service shares no filesystem
+# with anything, so host mode needs no other changes.
+#
+# Keep this manifest for machines without Apple Silicon, or for a fully
+# containerised deployment where CPU inference is acceptable.
+#
+# Podman Kubernetes pod manifest for backend-deepface.
+#
+# Build the image first (from the systems/backend-deepface directory):
+#   podman build --ignorefile systems/backend-deepface/.dockerignore \
+#                -f systems/backend-deepface/Dockerfile \
+#                -t backend-deepface \
+#                systems/backend-deepface
+#
+# Run with (from systems/backend-deepface/):
+#   podman play kube backend-deepface-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down backend-deepface-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-deepface
+  labels:
+    app: backend-deepface
+spec:
+  containers:
+    - name: backend-deepface
+      image: localhost/backend-deepface:latest
+
+      ports:
+        - containerPort: 5001
+          hostPort: 5001
+          protocol: TCP
+
+      env:
+        # Keep the local processing database on a mounted volume. Without this it
+        # lands in the container's writable layer: unbounded growth while running,
+        # gone on restart.
+        - name: FACE_LABELS_DB
+          value: /app/data/face_labels.db
+
+        # Which model embeds a face, and which to pre-load. start-podman.sh
+        # passes these from deploy/airlock.env; a `podman play kube` deployment
+        # has no shell to read that, so the defaults live here.
+        #
+        # VGG-Face is the default for compatibility, but its weights are a
+        # 560 MB download AND licensed for non-commercial research only - see
+        # documentation/specs/commercial-licensing-audit.md. SFace is Apache
+        # 2.0 and 37 MB. Set both to SFace on a host that has migrated.
+        - name: DEEPFACE_MODEL
+          value: VGG-Face
+        - name: DEEPFACE_WARMUP_MODELS
+          value: VGG-Face
+        # The face detector's cutoff (documentation/features/FACE_DETECTION_THRESHOLD.md);
+        # start-podman.sh takes it from YUNET_SCORE_THRESHOLD in deploy/airlock.env.
+        - name: YUNET_SCORE_THRESHOLD
+          value: "0.9"
+
+        # Workers, and whether to build the embedder at startup rather than on
+        # the first request. start-podman.sh computes WORKERS from host memory
+        # and turns the warm-up off when memory is short; a manifest cannot, so
+        # these are conservative.
+        - name: DEEPFACE_WORKERS
+          value: "2"
+        - name: DEEPFACE_WARMUP_EMBEDDER
+          value: "1"
+
+      volumeMounts:
+        # Local processing database (images, labels, detections)
+        - name: data
+          mountPath: /app/data
+
+        # Temporary uploads folder
+        - name: uploads
+          mountPath: /app/uploads
+
+        # Database images folder
+        - name: database-images
+          mountPath: /app/database_images
+
+        # DeepFace downloaded weights / models cache to avoid re-downloading on container restart
+        - name: deepface-weights
+          mountPath: /home/appuser/.deepface
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    - name: data
+      hostPath:
+        path: ./data
+        type: DirectoryOrCreate
+
+    - name: uploads
+      hostPath:
+        path: ./uploads
+        type: DirectoryOrCreate
+
+    - name: database-images
+      hostPath:
+        path: ./database_images
+        type: DirectoryOrCreate
+
+    - name: deepface-weights
+      hostPath:
+        path: ./deepface_weights
+        type: DirectoryOrCreate

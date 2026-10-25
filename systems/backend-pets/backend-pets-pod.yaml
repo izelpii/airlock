@@ -1,0 +1,67 @@
+# Podman Kubernetes pod manifest for the pet-recognition backend.
+#
+# Build the image first (from systems/backend-pets/):
+#   podman build --ignorefile systems/backend-pets/.dockerignore \
+#                -f systems/backend-pets/Dockerfile \
+#                -t backend-pets systems/backend-pets/
+#
+# Run with:
+#   podman play kube systems/backend-pets/backend-pets-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down systems/backend-pets/backend-pets-pod.yaml
+#
+# See documentation/specs/pet-recognition-spec.md section 4.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-pets
+  labels:
+    app: backend-pets
+spec:
+  containers:
+    - name: backend-pets
+      image: localhost/backend-pets:latest
+
+      ports:
+        - containerPort: 5006
+          hostPort: 5006
+          protocol: TCP
+
+      env:
+        # The detector's input side. 640 is YOLOX's native; 320 is a quarter of
+        # the pixels and roughly four times faster. Which to use is what the
+        # spec's section 12 benchmark decides; 640 is the conservative default
+        # until it has.
+        - name: PETS_DETECT_SIZE
+          value: "416"
+
+        # How many inferences at once. start-podman.sh can take this from
+        # deploy/airlock.env; a manifest has no shell to size it from host
+        # memory, so it is conservative here.
+        - name: PETS_CONCURRENCY
+          value: "2"
+
+      volumeMounts:
+        # The ONNX models. Bind-mounted rather than baked, matching
+        # backend-deepface: a 37 MB file does not belong in every image layer,
+        # and it can be replaced without a rebuild. A missing model makes its
+        # endpoint answer 503 - /health says which are present.
+        - name: pets-weights
+          mountPath: /app/weights
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    # Relative to the directory you run `podman play kube` from
+    # (systems/backend-pets/).
+    - name: pets-weights
+      hostPath:
+        path: ./weights
+        type: DirectoryOrCreate

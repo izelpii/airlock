@@ -1,0 +1,34 @@
+# Podman Kubernetes pod manifest for the workflow frontend.
+#
+# Build the image first (from the systems/frontend/ directory):
+#   podman build --ignorefile systems/frontend/.dockerignore \
+#                -f systems/frontend/Dockerfile \
+#                -t workflow-frontend \
+#                systems/frontend
+#
+# Run with (from systems/frontend/):
+#   podman play kube frontend-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down frontend-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: workflow-frontend
+  labels:
+    app: workflow-frontend
+spec:
+  containers:
+    - name: workflow-frontend
+      image: localhost/workflow-frontend:latest
+
+      ports:
+        - containerPort: 3000
+          hostPort: 3000
+          protocol: TCP
+
+      securityContext:
+        runAsNonRoot: false
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false

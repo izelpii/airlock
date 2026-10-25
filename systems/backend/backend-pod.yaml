@@ -1,0 +1,208 @@
+# Podman Kubernetes pod manifest for the workflow backend.
+#
+# Everything below is relative to systems/backend/ — run all of these from that
+# directory. The build context MUST be systems/backend/ (not the project root):
+# the Dockerfile COPYs requirements.txt, catalog.py, file_manager.py, app.py,
+# models.py and workflows/, all of which live here, not at the root. Building
+# from the project root fails on the first COPY.
+#
+# Build the image first (from systems/backend/):
+#   podman build --ignorefile .dockerignore -f Dockerfile -t workflow-backend .
+#
+# Or just use the wrapper, which sets the context correctly:
+#   ./start-podman.sh --build
+#
+# Run with:
+#   podman play kube backend-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down backend-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: workflow-backend
+  labels:
+    app: workflow-backend
+spec:
+  # Service names resolve to the host, where the gateway publishes :80 and routes
+  # by Host header. Containers do NOT read the Mac's /etc/hosts, so the mapping
+  # has to be declared here. See systems/gateway/ and
+  # documentation/specs/redesign-ports-routes-spec.md section 6.3.
+  hostAliases:
+    - ip: "host-gateway"
+      hostnames:
+        - "host.containers.internal"
+        - "airlock.lan"
+        - "backend.airlock.lan"
+        - "deepface.airlock.lan"
+        - "vision.airlock.lan"
+        - "geoloc.airlock.lan"
+        - "albums.airlock.lan"
+        - "gallery.airlock.lan"
+        - "ollama.airlock.lan"
+        - "transcode.airlock.lan"
+        - "pets.airlock.lan"
+
+  containers:
+    - name: workflow-backend
+      image: localhost/workflow-backend:latest
+
+      ports:
+        - containerPort: 5000
+          hostPort: 5000
+          protocol: TCP
+
+      env:
+        # Set to "production" to disable Flask debug mode inside the container.
+        - name: FLASK_ENV
+          value: production
+        # Services are addressed by name through the gateway. deepface itself
+        # still runs on the host (Metal has no passthrough into podman's VM);
+        # the gateway forwards deepface.airlock.lan to it, so this side does not
+        # have to know that.
+        - name: DEEPFACE_URL
+          value: "http://deepface.airlock.lan"
+        # Video previews (accelerated-services-spec.md). Unreachable or empty
+        # means the import makes them itself, as before.
+        - name: TRANSCODE_URL
+          value: "http://transcode.airlock.lan:5004"
+        - name: ALBUMS_URL
+          value: "http://albums.airlock.lan"
+        - name: BACKEND_URL
+          value: "http://backend.airlock.lan"
+
+        # Empty on purpose, both of them, and that is the whole point of
+        # declaring them: an absent variable and an empty one mean the same
+        # thing to app.py, so writing them here says "considered, left at the
+        # default" rather than "forgotten".
+        #
+        # AIRLOCK_ALLOWED_ORIGINS adds only GENUINELY cross-origin callers.
+        # Same-origin is decided per request in app.py (_origin_allowed), so a
+        # machine reached at a new address needs nothing set.
+        - name: AIRLOCK_ALLOWED_ORIGINS
+          value: ""
+        # The magic-wormhole transit relay, for catalog transfer. Empty uses
+        # the public relay.
+        - name: WORMHOLE_TRANSIT_RELAY
+          value: ""
+
+        # ── Storage routes ────────────────────────────────────────────────
+        # The one directory tree storage routes may point inside
+        # (documentation/specs/local-storage-spec.md). Keep BOTH of these and
+        # the storage volume below in step with start-podman.sh: without them
+        # the Storage page reports the feature as unconfigured, which is the
+        # visible version of the drift that once left gateway-pod.yaml without
+        # TLS. systems/test_pod_manifests.py now checks this.
+        - name: STORAGE_ROOT_HOST
+          value: "/Users/izelpi"
+        - name: STORAGE_ROOT_CONTAINER
+          value: "/storage"
+
+      volumeMounts:
+        # Persistent database volume (catalogs.db lives here)
+        - name: database
+          mountPath: /app/database
+
+        # Who this copy is licensed to: a signed *.license file, read-only
+        # (airlock_license.py). The repository's license/ folder.
+        - name: license
+          mountPath: /license
+          readOnly: true
+
+        # Workflow scripts — mounted from the host so edits are live without rebuilding.
+        - name: workflows
+          mountPath: /app/workflows
+
+        # All catalog data directories. Each catalog's Target Directory in the
+        # UI must be set to /catalogs/<catalog-name>.
+        # To move to a new machine: update the catalogs volume hostPath below.
+        - name: catalogs
+          mountPath: /catalogs
+
+        # Input directory for import workflows (e.g. io_picture_import_workflow.py).
+        # Set a workflow's Source Directory to /input (or a subdirectory).
+        # To move to a new machine: update the input volume hostPath below.
+        - name: input
+          mountPath: /input
+
+        # Storage routes read from here. STORAGE_ROOT_HOST above must name the
+        # same host directory as the volume below. Read-write, so a move-mode
+        # import can take files out of a route marked "imports may move files"
+        # (ingest-move-spec.md 8.1); set readOnly: true to forbid that outright.
+        - name: storage
+          mountPath: /storage
+          readOnly: false
+
+        # Mount catalog data directories so the backend can read/write files.
+        # Add one entry per catalog target_directory you have configured.
+        # Example — uncomment and adjust the path:
+        # - name: catalog-data
+        #   mountPath: /data/catalog
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    - name: database
+      hostPath:
+        # Relative to the directory you run `podman play kube` from (systems/backend/)
+        path: ./database
+        type: DirectoryOrCreate
+
+    - name: license
+      hostPath:
+        # Relative to the directory you run `podman play kube` from (systems/backend/)
+        path: ../../license
+        type: DirectoryOrCreate
+
+    - name: workflows
+      hostPath:
+        # Relative to the directory you run `podman play kube` from (systems/backend/)
+        path: ./workflows
+        type: Directory
+
+    # ── Catalog data root ──────────────────────────────────────────────────────
+    # All catalog subdirectories live here. Update this path when porting to a
+    # new machine (see also CATALOGS_HOST_DIR in start-podman.sh).
+    - name: catalogs
+      hostPath:
+        path: /Users/izelpi/Personal/Development/shoebox/catalogs
+        type: DirectoryOrCreate
+
+    # ── Input directory ────────────────────────────────────────────────────────
+    # Source files for import workflows. Update this path when porting to a new
+    # machine (see also INPUT_HOST_DIR in start-podman.sh).
+    #
+    # Point this at a REAL directory, never a symlink. A bind mount resolves once,
+    # at container start, and then pins to that directory. Replacing the host path
+    # afterwards - swapping in a symlink, pointing it somewhere else - is invisible
+    # to the running container, which keeps serving the original directory. That
+    # produced a confusing failure: imports kept finding the same 47 old files
+    # while the host directory had been repointed at 11,000 new ones.
+    #
+    # After changing this path you MUST recreate the pod:
+    #   podman play kube --down backend-pod.yaml && podman play kube backend-pod.yaml
+    #
+    # type is Directory, not DirectoryOrCreate: if the path is wrong, fail loudly
+    # rather than silently creating an empty directory and importing nothing.
+    - name: input
+      hostPath:
+        path: /Users/izelpi/Personal/Development/shoebox/IN
+        type: Directory
+
+    # ── Storage root ───────────────────────────────────────────────────────────
+    # Everything under this is readable by the backend, read-only, and storage
+    # routes may name any folder inside it. Nothing outside it can become a
+    # route. Update alongside STORAGE_ROOT_HOST above and in start-podman.sh.
+    #
+    # type is Directory, not DirectoryOrCreate: a wrong path here should fail
+    # rather than silently create an empty tree in which no route resolves.
+    - name: storage
+      hostPath:
+        path: /Users/izelpi
+        type: Directory

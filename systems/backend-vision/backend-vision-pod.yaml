@@ -1,0 +1,97 @@
+# Podman Kubernetes pod manifest for the vision (image description) backend.
+#
+# Everything below is relative to systems/backend-vision/ — run these from that
+# directory. The build context MUST be systems/backend-vision/.
+#
+# Build the image first (from systems/backend-vision/):
+#   podman build --ignorefile .dockerignore -f Dockerfile -t backend-vision .
+#
+# Or use the wrapper, which sets the context correctly:
+#   ./start-podman.sh --build
+#
+# Run with:
+#   podman play kube backend-vision-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down backend-vision-pod.yaml
+#
+# ── Why this service needs the catalog mount ──────────────────────────────────
+# Unlike backend-deepface (which receives image BYTES over HTTP), this service is
+# called with an image PATH:
+#     POST /describe  {"image_path": "/catalogs/family/cache/Images/..."}
+# Those paths are produced by the main backend and are absolute in ITS namespace,
+# so this container must see the catalog at the SAME path or every call fails
+# with a missing file. Hence /catalogs, mounted read-only — descriptions are
+# written back through the main backend's API, never directly.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-vision
+  labels:
+    app: backend-vision
+
+spec:
+  # Service names resolve to the host, where the gateway publishes :80 and routes
+  # by Host header. Containers do NOT read the Mac's /etc/hosts, so the mapping
+  # has to be declared here. See systems/gateway/ and
+  # documentation/specs/redesign-ports-routes-spec.md section 6.3.
+  hostAliases:
+    - ip: "host-gateway"
+      hostnames:
+        - "host.containers.internal"
+        - "airlock.lan"
+        - "backend.airlock.lan"
+        - "deepface.airlock.lan"
+        - "vision.airlock.lan"
+        - "geoloc.airlock.lan"
+        - "albums.airlock.lan"
+        - "gallery.airlock.lan"
+        - "ollama.airlock.lan"
+
+  containers:
+    - name: backend-vision
+      image: localhost/backend-vision:latest
+
+      ports:
+        - containerPort: 5003
+          hostPort: 5003
+          protocol: TCP
+
+      env:
+        # Ollama runs on the host. Inside a container "localhost" is the
+        # container itself, so this must be set or every description call fails
+        # silently. The gateway forwards ollama.airlock.lan to the host.
+        - name: OLLAMA_HOST
+          value: "http://ollama.airlock.lan"
+
+        # Vision-capable model to use. Must already be pulled on the host:
+        #   ollama pull gemma4:latest
+        - name: OLLAMA_MODEL
+          value: "gemma4:latest"
+
+        - name: PYTHONUNBUFFERED
+          value: "1"
+
+      volumeMounts:
+        # Catalog data, mounted at the same path the main backend uses so the
+        # absolute image_path values it hands out resolve here too.
+        - name: catalogs
+          mountPath: /catalogs
+          readOnly: true
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    # ── Catalog data root ──────────────────────────────────────────────────────
+    # Must match the catalogs hostPath in backend/backend-pod.yaml.
+    # Update this path when porting to a new machine.
+    - name: catalogs
+      hostPath:
+        path: /Users/izelpi/Personal/Development/shoebox/catalogs
+        type: DirectoryOrCreate

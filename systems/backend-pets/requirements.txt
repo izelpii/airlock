@@ -1,0 +1,10 @@
+# No deep-learning framework on purpose. Both models are ONNX and run under
+# onnxruntime, which is the precedent YuNet already sets inside
+# backend-deepface: a small ONNX file in a plain runtime, no TensorFlow and no
+# torch. See documentation/specs/pet-recognition-spec.md section 4.1.
+flask==3.0.0
+flask-cors==4.0.0
+gunicorn>=21.2.0
+numpy>=1.24.0
+onnxruntime>=1.17.0
+Pillow>=10.0.0

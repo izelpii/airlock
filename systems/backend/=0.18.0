@@ -1,0 +1,12 @@
+Collecting rawpy
+  Downloading rawpy-0.26.1-cp312-cp312-macosx_11_0_arm64.whl.metadata (9.5 kB)
+Collecting numpy>=1.26.0 (from rawpy)
+  Using cached numpy-2.4.2-cp312-cp312-macosx_14_0_arm64.whl.metadata (6.6 kB)
+Downloading rawpy-0.26.1-cp312-cp312-macosx_11_0_arm64.whl (1.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.1/1.1 MB 509.3 kB/s eta 0:00:00
+Using cached numpy-2.4.2-cp312-cp312-macosx_14_0_arm64.whl (5.2 MB)
+Installing collected packages: numpy, rawpy
+Successfully installed numpy-2.4.2 rawpy-0.26.1
+
+[notice] A new release of pip is available: 25.0.1 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip

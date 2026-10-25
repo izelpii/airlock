@@ -1,0 +1,18 @@
+Flask==3.0.0
+Flask-CORS==4.0.0
+Flask-SocketIO==5.3.5
+python-socketio==5.10.0
+gevent==24.2.1
+gevent-websocket==0.10.1
+Pillow==10.1.0
+PyExifTool==0.5.6
+requests>=2.31.0
+pillow-heif>=0.13.0
+rawpy>=0.18.0
+pygeohash>=1.2.0
+numpy>=1.26,<2.0
+gunicorn>=21.2.0
+magic-wormhole[dilate]>=0.24.0
+# Backup cards' secrets, encrypted at rest (backup_secrets.py). Already
+# present through magic-wormhole; declared because this code imports it.
+cryptography>=42

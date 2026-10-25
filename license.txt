@@ -1,0 +1,124 @@
+END-USER LICENSE AGREEMENT
+Personal & Non-Commercial Use Only
+
+Software:  Airlock Photos
+Licensor:  Christian E. Loza
+Copyright © 2026 Christian E. Loza. All rights reserved.
+
+In this Agreement, "the Software" means the Airlock Photos application named above,
+including its source code, documentation, and any updates provided by the
+Licensor. "You" means the individual accepting these terms.
+
+BY DOWNLOADING, INSTALLING, OR USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THIS
+AGREEMENT. IF YOU DO NOT AGREE, DO NOT INSTALL OR USE THE SOFTWARE.
+
+
+--------------------------------------------------------------------------------
+1. LICENSE GRANT
+--------------------------------------------------------------------------------
+
+Subject to the terms and conditions of this Agreement, the Licensor hereby
+grants you a personal, non-exclusive, non-transferable, non-sublicensable,
+revocable, and limited license to download, install, and use the Software solely
+for your Personal Use.
+
+All rights not expressly granted to you are reserved by the Licensor.
+
+
+--------------------------------------------------------------------------------
+2. DEFINITION OF PERSONAL USE
+--------------------------------------------------------------------------------
+
+For the purposes of this Agreement, "Personal Use" means the use of the Software
+by an individual solely for private, educational, or recreational purposes.
+
+Personal Use explicitly excludes any use that is intended for, or directed
+toward, commercial advantage or private monetary compensation.
+
+
+--------------------------------------------------------------------------------
+3. COMMERCIAL RESTRICTIONS
+--------------------------------------------------------------------------------
+
+You shall not use the Software, or any derivative works of the Software, for any
+Commercial Use. Commercial Use includes, but is not limited to:
+
+  3.1  Internal Business Operations
+       Using the Software within a company, corporation, partnership, or other
+       organization to support daily operations or administrative tasks.
+
+  3.2  Commercial Services
+       Using the Software to provide services to third parties for a fee,
+       including "Software as a Service" (SaaS) or consulting models.
+
+  3.3  Monetization
+       Using the Software in connection with content creation, application
+       development, or products that generate advertising revenue,
+       subscriptions, or direct sales.
+
+  3.4  Employment
+       Using the Software in the course of your employment or professional
+       duties for an employer.
+
+
+--------------------------------------------------------------------------------
+4. ADDITIONAL RESTRICTIONS
+--------------------------------------------------------------------------------
+
+Except as expressly permitted under Section 1, you agree that you will not, and
+will not permit any third party to:
+
+  4.1  Reverse Engineer
+       Decompile, disassemble, or reverse engineer the Software.
+
+  4.2  Distribute
+       Rent, lease, lend, sell, redistribute, or sublicense the Software.
+
+  4.3  Modify
+       Create derivative works based upon the Software without the explicit
+       written consent of the Licensor.
+
+  4.4  Derive using AI
+       Use the software to create a similar functioning application
+       using AI, automatic programming, vibe coding or similar.
+
+--------------------------------------------------------------------------------
+5. TERMINATION
+--------------------------------------------------------------------------------
+
+This Agreement is effective until terminated. Your rights under this license
+will terminate automatically without notice from the Licensor if you fail to
+comply with any term of this Agreement.
+
+Upon termination, you must cease all use of the Software and destroy all copies
+in your possession or control.
+
+
+--------------------------------------------------------------------------------
+6. DISCLAIMER OF WARRANTY AND LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+--------------------------------------------------------------------------------
+7. COMMERCIAL LICENSING
+--------------------------------------------------------------------------------
+
+Commercial use of the Software is not permitted under this Agreement. If you
+wish to use the Software for any purpose described in Section 3, contact the
+Licensor to enquire about a separate commercial licence.
+
+
+--------------------------------------------------------------------------------
+8.  IMAGES
+Photo by <a href="https://unsplash.com/@steve_j?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Steve A Johnson</a> on <a href="https://unsplash.com/photos/a-blurry-photo-of-a-mountain-range-Yyb10fO2BjQ?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+--------------------------------------------------------------------------------
+

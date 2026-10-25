@@ -1,0 +1,17 @@
+Collecting requests
+  Using cached requests-2.32.5-py3-none-any.whl.metadata (4.9 kB)
+Collecting charset_normalizer<4,>=2 (from requests)
+  Using cached charset_normalizer-3.4.4-cp312-cp312-macosx_10_13_universal2.whl.metadata (37 kB)
+Collecting idna<4,>=2.5 (from requests)
+  Using cached idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+Collecting urllib3<3,>=1.21.1 (from requests)
+  Using cached urllib3-2.6.3-py3-none-any.whl.metadata (6.9 kB)
+Collecting certifi>=2017.4.17 (from requests)
+  Using cached certifi-2026.2.25-py3-none-any.whl.metadata (2.5 kB)
+Using cached requests-2.32.5-py3-none-any.whl (64 kB)
+Using cached certifi-2026.2.25-py3-none-any.whl (153 kB)
+Using cached charset_normalizer-3.4.4-cp312-cp312-macosx_10_13_universal2.whl (208 kB)
+Using cached idna-3.11-py3-none-any.whl (71 kB)
+Using cached urllib3-2.6.3-py3-none-any.whl (131 kB)
+Installing collected packages: urllib3, idna, charset_normalizer, certifi, requests
+Successfully installed certifi-2026.2.25 charset_normalizer-3.4.4 idna-3.11 requests-2.32.5 urllib3-2.6.3

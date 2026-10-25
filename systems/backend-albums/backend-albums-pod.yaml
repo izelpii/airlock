@@ -1,0 +1,63 @@
+# Podman Kubernetes pod manifest for backend-albums.
+#
+# Build the image first (from the systems/backend-albums directory):
+#   podman build -t backend-albums .
+#
+# Run with:
+#   podman play kube backend-albums-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down backend-albums-pod.yaml
+#
+# Ollama is expected to be running on the host at port 11434.
+# host.containers.internal resolves to the host machine inside Podman containers.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-albums
+  labels:
+    app: backend-albums
+spec:
+  # Service names resolve to the host, where the gateway publishes :80 and routes
+  # by Host header. Containers do NOT read the Mac's /etc/hosts, so the mapping
+  # has to be declared here. See systems/gateway/ and
+  # documentation/specs/redesign-ports-routes-spec.md section 6.3.
+  hostAliases:
+    - ip: "host-gateway"
+      hostnames:
+        - "host.containers.internal"
+        - "airlock.lan"
+        - "backend.airlock.lan"
+        - "deepface.airlock.lan"
+        - "vision.airlock.lan"
+        - "geoloc.airlock.lan"
+        - "albums.airlock.lan"
+        - "gallery.airlock.lan"
+        - "ollama.airlock.lan"
+
+  containers:
+    - name: backend-albums
+      image: localhost/backend-albums:latest
+
+      ports:
+        - containerPort: 5005
+          hostPort: 5005
+          protocol: TCP
+
+      env:
+        - name: ALBUMS_LLM_MODEL
+          value: granite3.3:8b
+        # Point the ollama Python client at the host's Ollama instance,
+        # through the gateway. Override if Ollama runs elsewhere.
+        - name: OLLAMA_HOST
+          value: http://ollama.airlock.lan
+
+      # No volume mounts needed — this service is stateless.
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false

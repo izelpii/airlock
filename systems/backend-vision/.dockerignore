@@ -1,0 +1,9 @@
+__pycache__
+.pytest_cache
+venv
+*.pyc
+*.pyo
+.vscode
+*.md
+.gitignore
+image.jpg

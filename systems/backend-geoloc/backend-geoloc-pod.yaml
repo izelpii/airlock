@@ -1,0 +1,53 @@
+# Podman Kubernetes pod manifest for the geolocation backend.
+#
+# Build the image first (from systems/backend-geoloc/):
+#   podman build --ignorefile systems/backend-geoloc/.dockerignore \
+#                -f systems/backend-geoloc/Dockerfile \
+#                -t backend-geoloc systems/backend-geoloc/
+#
+# Run with:
+#   podman play kube systems/backend-geoloc/backend-geoloc-pod.yaml
+#
+# Tear down with:
+#   podman play kube --down systems/backend-geoloc/backend-geoloc-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-geoloc
+  labels:
+    app: backend-geoloc
+spec:
+  containers:
+    - name: backend-geoloc
+      image: localhost/backend-geoloc:latest
+
+      ports:
+        - containerPort: 5002
+          hostPort: 5002
+          protocol: TCP
+
+      volumeMounts:
+        # OSMnx writes its HTTP cache here (WORKDIR is /app; osmnx's default
+        # cache folder is ./cache). Without this mount the cache is discarded on
+        # every restart and the service re-queries Nominatim from cold - slow,
+        # and against Nominatim's usage policy, which expects clients to cache.
+        # The app already sleeps 1s between requests to respect the rate limit;
+        # losing the cache multiplies how often it has to pay that.
+        - name: geoloc-cache
+          mountPath: /app/cache
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        readOnlyRootFilesystem: false
+        allowPrivilegeEscalation: false
+
+  volumes:
+    # Relative to the directory you run `podman play kube` from
+    # (systems/backend-geoloc/).
+    - name: geoloc-cache
+      hostPath:
+        path: ./cache
+        type: DirectoryOrCreate

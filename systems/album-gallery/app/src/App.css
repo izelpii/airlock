@@ -1,0 +1,1037 @@
+/* The panel opens and closes by animating the column itself, so the photos
+   slide over rather than jumping. Closed, the column keeps the width of the
+   menu button - the panel narrows to a strip rather than going away. */
+.app-shell {
+  --sidebar-width: 320px;
+  --sidebar-rail: 3.5rem;
+  --sidebar-speed: 0.3s;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+  background: #f3f4f6;
+  color: #111827;
+  transition: grid-template-columns var(--sidebar-speed) ease;
+}
+
+.app-shell--collapsed {
+  grid-template-columns: var(--sidebar-rail) minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+}
+
+.app-shell--collapsed .sidebar {
+  overflow-y: hidden;
+}
+
+/* The button is centred in the closed strip: 0.5rem either side of a 2.5rem
+   button. Fixed at the open width for the same reason as the body below, so
+   the title beside the button does not re-wrap while the column animates. */
+.sidebar__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: var(--sidebar-width);
+  padding: 0.75rem 1.5rem 0 0.5rem;
+}
+
+.menu-toggle {
+  flex-shrink: 0;
+}
+
+.sidebar__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  color: #111827;
+  overflow-wrap: anywhere;
+  transition: opacity calc(var(--sidebar-speed) * 0.6) ease;
+}
+
+.app-shell--collapsed .sidebar__title {
+  opacity: 0;
+}
+
+/* A fixed width, not the column's: while the column animates, the text
+   would otherwise re-wrap on every frame. The column clips it instead. */
+.sidebar__body {
+  width: var(--sidebar-width);
+  padding: 1rem 1.5rem 2rem;
+  transition: opacity calc(var(--sidebar-speed) * 0.6) ease;
+}
+
+.app-shell--collapsed .sidebar__body {
+  opacity: 0;
+}
+
+/* The closed strip's icons. Laid over the panel below the menu button rather
+   than stacked after the body, which is still there - faded out and inert -
+   so the fade has something to fade. */
+.sidebar__rail {
+  position: absolute;
+  top: 3.75rem;
+  bottom: 0;
+  left: 0;
+  width: var(--sidebar-rail);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 0.25rem 0 1rem;
+  opacity: 0;
+  visibility: hidden;
+  /* Leaving: fade, then hide. */
+  transition:
+    opacity calc(var(--sidebar-speed) * 0.5) ease,
+    visibility 0s linear calc(var(--sidebar-speed) * 0.5);
+}
+
+.sidebar__rail::-webkit-scrollbar {
+  display: none;
+}
+
+.app-shell--collapsed .sidebar__rail {
+  opacity: 1;
+  visibility: visible;
+  /* Arriving: wait for the column to narrow, so the icons appear in the strip
+     rather than drifting across the panel on their way there. */
+  transition:
+    opacity calc(var(--sidebar-speed) * 0.6) ease calc(var(--sidebar-speed) * 0.5),
+    visibility 0s;
+}
+
+.rail__list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail__button {
+  display: block;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 0.7rem;
+  background: none;
+  cursor: pointer;
+}
+
+.rail__button .thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 0.45rem;
+}
+
+.rail__button--section,
+.rail__button--section .thumb {
+  border-radius: 50%;
+}
+
+.rail__button:hover {
+  border-color: #93c5fd;
+}
+
+.rail__button--here {
+  border-color: #bfdbfe;
+}
+
+.rail__button--active {
+  border-color: #2563eb;
+}
+
+.rail__button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.rail__divider {
+  width: 1.75rem;
+  margin: 0.75rem auto;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.sidebar__header,
+.sidebar__section {
+  margin-bottom: 2rem;
+}
+
+.album-section__header h3,
+.sidebar__section h2 {
+  margin: 0;
+  color: #111827;
+}
+
+.sidebar__header p,
+.album-section__header p,
+.empty-note,
+.empty-state,
+.album-pill small {
+  color: #6b7280;
+}
+
+.eyebrow {
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+
+.album-list,
+.tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.album-pill,
+.tag-chip {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 0.9rem;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+}
+
+.album-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem 0.6rem 0.6rem;
+  text-align: left;
+}
+
+.album-pill__title {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Navigation icons: a cover's square crop, or initials on a tint. The same
+   picture marks an album or section in the open panel and in the closed
+   strip, so the strip reads without its labels. */
+.thumb {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #e5e7eb;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb--empty {
+  color: #374151;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.album-pill__thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+}
+
+/* Sections are round and albums square, here and in the strip. */
+.tree__thumb {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  font-size: 0.55rem;
+}
+
+.album-pill--active,
+.tag-chip--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.tag-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.tag-chip {
+  width: auto;
+  padding: 0.6rem 0.9rem;
+}
+
+.content {
+  padding: 2rem;
+}
+
+.menu-toggle {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 0.6rem;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.08);
+  cursor: pointer;
+}
+
+.menu-toggle:hover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.menu-toggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Three bars from one element: the span is the middle bar, its ::before and
+   ::after the outer two. */
+.menu-toggle__bars,
+.menu-toggle__bars::before,
+.menu-toggle__bars::after {
+  display: block;
+  width: 1.1rem;
+  height: 2px;
+  border-radius: 1px;
+  background: #111827;
+}
+
+.menu-toggle__bars {
+  position: relative;
+}
+
+.menu-toggle__bars::before,
+.menu-toggle__bars::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.menu-toggle__bars::before {
+  top: -6px;
+}
+
+.menu-toggle__bars::after {
+  top: 6px;
+}
+
+.album-section {
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 1.25rem;
+  background: #ffffff;
+}
+
+.album-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.section-count {
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.empty-state,
+.empty-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 1rem;
+  background: #f8fafc;
+}
+
+.empty-shell {
+  min-height: 100vh;
+}
+
+.gallery-image {
+  display: block;
+}
+
+@media (max-width: 960px) {
+  .app-shell,
+  .app-shell--collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked above the photos, so here the panel slides UP to its button row
+     instead of in to a strip. The 1fr -> 0fr row is what lets a height of
+     "whatever the content needs" animate. */
+  .sidebar {
+    position: static;
+    height: auto;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    transition: grid-template-rows var(--sidebar-speed) ease;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .app-shell--collapsed .sidebar {
+    grid-template-rows: auto auto 0fr;
+  }
+
+  /* Placed explicitly: the strip leaves the grid while the panel is open, and
+     the body must not slide up into its row. */
+  .sidebar__toolbar { grid-row: 1; }
+  .sidebar__rail { grid-row: 2; }
+  .sidebar__body { grid-row: 3; }
+
+  /* Here the strip is a row under the title bar, scrolled sideways. */
+  .sidebar__rail {
+    position: static;
+    display: none;
+    align-items: center;
+    width: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 1rem 0.75rem;
+  }
+
+  .app-shell--collapsed .sidebar__rail {
+    display: flex;
+  }
+
+  .rail__list {
+    flex-direction: row;
+  }
+
+  .rail__list li {
+    flex: 0 0 auto;
+  }
+
+  .rail__divider {
+    align-self: stretch;
+    width: 0;
+    margin: 0.35rem 0.75rem;
+    border-top: 0;
+    border-left: 1px solid #e5e7eb;
+  }
+
+  /* Stacked, the title stays beside the button when the panel is closed:
+     the bar is all that is left on screen, and it is the gallery's name. */
+  .sidebar__toolbar {
+    width: auto;
+    padding: 0.75rem 1rem;
+  }
+
+  .app-shell--collapsed .sidebar__title {
+    opacity: 1;
+  }
+
+  /* The padding collapses with the row: a box cannot be shorter than its own
+     padding, so leaving it would stop the panel short of closed. */
+  .sidebar__body {
+    width: auto;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: 0.25rem;
+    transition:
+      opacity calc(var(--sidebar-speed) * 0.6) ease,
+      padding var(--sidebar-speed) ease;
+  }
+
+  .app-shell--collapsed .sidebar__body {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .album-section__header {
+    flex-direction: column;
+  }
+}
+
+/* ── The password form ──────────────────────────────────────────────────────
+   Shown when deployment.json says requires_password and no session cookie is
+   set. It never receives album data: the server refuses albums.json and every
+   image until the cookie exists, so this screen has nothing to leak. */
+.lock-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.lock-card {
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lock-card h1 {
+  margin: 0;
+}
+
+.lock-hint {
+  margin: 0;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.lock-card input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.lock-card button {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.lock-card button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lock-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #d33;
+}
+
+/* ── Categories ─────────────────────────────────────────────────────────────
+   album-gallery-enhancement-spec.md section 8. The nav is one flat column of
+   links when an album has no categories, exactly as before; these rules only
+   have anything to style once a manifest carries them. */
+
+/* The sidebar tree. Indentation comes from nesting the lists, not from a
+   computed padding, so a node at any depth lines up with its siblings without
+   anything having to know how deep it is. */
+
+.tree,
+.tree__children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree__children {
+  /* The rule runs down the parent's twisty column, so the guide and the
+     disclosure control share one axis. */
+  margin-left: 0.55rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid #e5e7eb;
+}
+
+.tree__row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.28rem 0.35rem;
+  border-radius: 0.4rem;
+  color: #111827;
+  text-decoration: none;
+}
+
+.tree__row--link:hover,
+.tree__row--link:focus-visible {
+  background: #eef2ff;
+}
+
+.tree__row--root {
+  font-weight: 600;
+}
+
+.tree__twisty {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: none;
+  color: #6b7280;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tree__twisty:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.tree__twisty--leaf {
+  cursor: default;
+}
+
+.tree__twisty--leaf:hover {
+  background: none;
+}
+
+.tree__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* The category name is the control that changes what the page shows, so it is
+   a button - focusable, and announced as one. */
+.tree__label--button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tree__row--selected {
+  background: #e0e7ff;
+  font-weight: 600;
+}
+
+.tree__row--selected .tree__count {
+  color: #4338ca;
+}
+
+.tree__count {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.category-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.category-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.5rem 0 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e5e7eb;
+  font-size: 1.15rem;
+  color: #111827;
+}
+
+.category-heading__count {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* ── Video ──────────────────────────────────────────────────────────────────
+   A deployed album carries the browser-friendly proxy and a poster frame. The
+   tile plays on hover and opens on click, the same way the Events gallery in
+   the main application behaves. */
+
+.video-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  /* The tile below owns the click; the badge must not swallow it. */
+  pointer-events: none;
+}
+
+.video-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.video-overlay__player {
+  max-width: min(1200px, 100%);
+  max-height: 100%;
+  outline: none;
+  background: #000000;
+}
+
+.video-overlay__close {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.video-overlay__close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+
+/* ── Browsing one category at a time ────────────────────────────────────────
+   The content pane shows the selected category only, so the way down into
+   sub-categories has to be on screen; the sidebar is the way back up. */
+
+.subcategories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.subcategory-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subcategory-pill:hover {
+  border-color: #6366f1;
+  background: #eef2ff;
+}
+
+.subcategory-pill small {
+  color: #6b7280;
+}
+
+/* ─── Event cards: a category page lists its events, each its own page ───── */
+.event-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  background: #ffffff;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.event-card:hover,
+.event-card:focus-visible {
+  border-color: #6366f1;
+  box-shadow: 0 4px 14px rgba(67, 56, 202, 0.12);
+}
+
+.event-card__cover {
+  display: block;
+  aspect-ratio: 1;
+  background: #f3f4f6;
+}
+
+.event-card__cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.event-card__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.event-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0.9rem 0.9rem;
+}
+
+.event-card__title {
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.event-card__count {
+  font-size: 0.8rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Below an event's drawn tiles: what scrolling reveals next, and a button for
+   anyone not scrolling. */
+.event-more {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #4338ca;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ─── Photo details in the lightbox ────────────────────────────────────────
+   PhotoSwipe owns the host element (.pswp__info-panel): it fades it with the
+   rest of the controls and gives it their z-index. One step under the top bar,
+   so the zoom, details and close buttons stay clickable above the panel, and
+   click-through everywhere the panel is not. */
+.pswp {
+  --photo-info-width: min(22rem, 88vw);
+  --photo-info-speed: 0.3s;
+}
+
+/* Scoped under .pswp on purpose. PhotoSwipe's `.pswp .pswp__hide-on-close`
+   sets z-index: 10 with two classes, so a bare `.pswp__info-panel` loses and
+   the panel - later in the DOM - lands ON TOP of the bar, covering the very
+   button that closes it. */
+.pswp .pswp__info-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--photo-info-width);
+  overflow: hidden;
+  z-index: 9;
+  pointer-events: none !important;
+}
+
+.photo-info {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Clears the 60px top bar. */
+  padding: 4.5rem 1.5rem 2rem;
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  font-size: 0.95rem;
+  pointer-events: none;
+  transform: translateX(100%);
+  opacity: 0;
+  visibility: hidden;
+  /* Leaving: slide out, then hide. */
+  transition:
+    transform var(--photo-info-speed) ease,
+    opacity var(--photo-info-speed) ease,
+    visibility 0s linear var(--photo-info-speed);
+}
+
+.photo-info--open {
+  pointer-events: auto;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    transform var(--photo-info-speed) ease,
+    opacity var(--photo-info-speed) ease,
+    visibility 0s;
+}
+
+.photo-info__eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+
+.photo-info__title {
+  margin: 0 0 1.25rem;
+  font-size: 1.15rem;
+  line-height: 1.3;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.photo-info__facts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1.5rem;
+}
+
+.photo-info__facts dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.photo-info__facts dd {
+  margin: 0.1rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.photo-info__muted {
+  color: #cbd5e1;
+  opacity: 0.8;
+}
+
+.photo-info__heading {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.photo-info__heading + .photo-info__muted {
+  margin: 0 0 1.5rem;
+}
+
+.photo-info__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-info__tags li {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.85rem;
+}
+
+.photo-info__sizes {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-info__sizes a {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #bfdbfe;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.photo-info__sizes a:hover,
+.photo-info__sizes a:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.photo-info__sizes a:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+
+/* The details button shows when the panel is open. */
+.pswp__button--info-button[aria-pressed='true'] .pswp__icn {
+  fill: #93c5fd;
+}
+
+/* The next arrow moves out from under the panel. Its opacity transition is
+   PhotoSwipe's, restated because naming transform here replaces the list. */
+.pswp__button--arrow--next {
+  transition:
+    opacity var(--pswp-transition-duration) cubic-bezier(0.4, 0, 0.22, 1),
+    transform var(--photo-info-speed) ease;
+}
+
+.pswp--info-open .pswp__button--arrow--next {
+  transform: translateX(calc(-1 * var(--photo-info-width)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell,
+  .sidebar,
+  .sidebar__title,
+  .sidebar__rail,
+  .app-shell--collapsed .sidebar__rail,
+  .sidebar__body,
+  .photo-info,
+  .photo-info--open,
+  .pswp__button--arrow--next {
+    transition: none;
+  }
+}

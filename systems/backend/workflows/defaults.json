@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "_comment": [
+    "Workflows created automatically with each new catalog.",
+    "See documentation/specs/workflows-default-spec.md.",
+    "",
+    "'script' is the identity key: workflow_triggers.py resolves chains by script",
+    "basename, and a workflow that is not registered for a catalog is silently",
+    "skipped. A typo here produces a workflow that runs when clicked and is never",
+    "part of any chain, with no error anywhere.",
+    "",
+    "'order' is display order only. Execution order comes from DEPENDS_ON in",
+    "workflow_triggers.py and is unaffected by row ids.",
+    "",
+    "This file lives in workflows/ because that directory is bind-mounted into",
+    "the backend container: it can be edited without rebuilding the image, and it",
+    "is read fresh on each use rather than cached at import."
+  ],
+  "workflows": [
+    {
+      "script": "io_picture_import_workflow.py",
+      "name": "Legacy Two-Stage Import",
+      "description": "The previous import, kept while the streaming import (Ingest Files) proves itself: the same result, one stage after another. Import photos and videos from the source directory, extract EXIF, and create browser-friendly versions.",
+      "type": "Import",
+      "ingestion": true,
+      "_default_comment": [
+        "NOT seeded with a new catalog, unlike everything else here.",
+        "An import workflow is created automatically when a STORAGE ROUTE is",
+        "created, named after it and pointed at it (app.py",
+        "_create_import_workflow_for_route). Seeding one here as well produced a",
+        "workflow with no source that could not run until someone connected it",
+        "by hand - the step this removed.",
+        "",
+        "The entry stays: its name, type and description are what the",
+        "route-created workflow is built from, and is_ingestion_script() and the",
+        "trigger chain both resolve through it."
+      ],
+      "default": false,
+      "order": 10
+    },
+    {
+      "script": "io_picture_import_v2_workflow.py",
+      "name": "Import Files",
+      "description": "The same import - same dates, same duplicate checks, same catalog - scheduled for speed: reads each file once, with as many streams as the storage suits (one or two on a spinning disk), shows photos as they arrive, and renders previews in the background.",
+      "type": "Import",
+      "ingestion": true,
+      "_default_comment": [
+        "Not seeded, like the phased import above. THE DEFAULT since 2026-09-27:",
+        "every new storage route's import workflow runs this script",
+        "(app.py DEFAULT_INGEST_SCRIPT). AIRLOCK_INGEST_SCRIPT=",
+        "io_picture_import_workflow.py gives new routes the phased one again.",
+        "See documentation/features/ingestion-architecture.md."
+      ],
+      "default": false,
+      "order": 11
+    },
+    {
+      "script": "ev_extract_events.py",
+      "name": "Create Events",
+      "description": "Group photos into events by capture time and location.",
+      "type": "Create Events",
+      "ingestion": false,
+      "default": true,
+      "order": 20
+    },
+    {
+      "script": "ge_extract_locations.py",
+      "name": "Extract Locations",
+      "description": "Group GPS coordinates into places by proximity, for review.",
+      "type": "Locations",
+      "ingestion": false,
+      "default": true,
+      "order": 25
+    },
+    {
+      "script": "ge_resolve_locations.py",
+      "name": "Resolve Locations",
+      "description": "Record where each photo was and what place that is, including places inherited from an event.",
+      "type": "Locations",
+      "ingestion": false,
+      "default": true,
+      "order": 26
+    },
+    {
+      "script": "ai_auto_detect_faces_workflow.py",
+      "name": "Find Faces",
+      "description": "Look through imported photographs for faces and save a crop of each one. Finds faces; does not say who they are.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "default": true,
+      "order": 30
+    },
+    {
+      "script": "ai_embed_faces.py",
+      "name": "Measure Faces",
+      "description": "Turn each face crop into the numbers the matching steps compare. Nothing can be recognised until this has run. Resumable: stopping loses at most the crop in flight.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "default": true,
+      "order": 35,
+      "_comment": [
+        "Order 35: after Auto Detect Faces (30), which creates the crops, and",
+        "before Face Recognition (50), which needs their vectors.",
+        "",
+        "Its own workflow because embedding used to be a side effect of",
+        "scoring - so it only advanced while somebody tolerated a full",
+        "catalog scoring run, and its cost landed on whoever tagged a face.",
+        "documentation/specs/face-workflow-optimization.md"
+      ]
+    },
+    {
+      "script": "ai_ingest_manual_faces.py",
+      "name": "Learn Tagged Faces",
+      "description": "Take the faces you have named by hand and make them the examples everything else is matched against.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "default": true,
+      "order": 40
+    },
+    {
+      "script": "ai_face_recognition_workflow.py",
+      "name": "Match Faces by Appearance",
+      "description": "Compare every unnamed face with the faces you have named, and record how close each one is. Suggests; never names anybody by itself.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "default": true,
+      "order": 50
+    },
+    {
+      "script": "ai_contextual_recognition_workflow.py",
+      "name": "Re-rank Matches by Context",
+      "description": "Re-order the suggestions using who appears with whom, when the photographs were taken and which event they belong to. Looks at no images; only at what the steps above already found.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "default": true,
+      "order": 70
+    },
+    {
+      "script": "pe_identify_pets.py",
+      "name": "Measure and Match Pets",
+      "description": "Crop each detected animal, measure it, and compare it with the pets you have named.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "_default_comment": [
+        "NOT seeded with a new catalog. The `workflows` table has no `enabled`",
+        "column, so EXISTENCE IS THE SWITCH: these two rows are created by",
+        "PUT /api/catalogs/<id>/pets/settings {enabled:true}, through",
+        "workflow_defaults.create_pet_workflows, exactly as a storage route",
+        "creates its import workflow.",
+        "",
+        "A household with no pets therefore has no pet workflow rows at all -",
+        "nothing to run, nothing queued, nothing to explain. The entry stays here",
+        "because this file is where a workflow's name, type and description live,",
+        "and create_pet_workflows reads them from it rather than keeping a second",
+        "copy that would drift.",
+        "",
+        "See documentation/specs/pet-recognition-spec.md section 10."
+      ],
+      "default": false,
+      "order": 80
+    },
+    {
+      "script": "pe_cluster_pets.py",
+      "name": "Group Unnamed Pets",
+      "description": "Group animals that look like the same one, ready for you to name them in a single step.",
+      "type": "AI / ML",
+      "ingestion": false,
+      "_default_comment": [
+        "Not seeded, for the same reason as Identify Pets above.",
+        "",
+        "Groups are NOT pets: no `people` row exists for an unnamed animal. Naming",
+        "a group is what creates one, and that single action also writes person_id",
+        "to every member detection - which is what turns hundreds of photographs",
+        "into 'photos with Rex' without anybody tagging them by hand."
+      ],
+      "default": false,
+      "order": 90
+    }
+  ]
+}
