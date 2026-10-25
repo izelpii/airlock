@@ -169,10 +169,19 @@ if ! command -v podman >/dev/null 2>&1; then
     bad "podman not found - cannot ask the backend how many accounts exist"
 elif ! podman container exists workflow-backend 2>/dev/null; then
     bad "the workflow-backend container is not running"
-    info "Nothing serves /api, so the UI cannot be told that setup is needed."
-    info "Start it:  ./start-all.sh        (or: cd systems/backend && ./start-podman.sh)"
-    info "Then:      tail -50 logs/backend.log"
-    verdict "the backend is not running"
+    if [[ "$(airlock_backend_port_status 5000)" == airplay ]]; then
+        # The usual reason on a new Mac: the container cannot bind :5000, while
+        # :5000 still answers - with AirPlay's 403, which the checks below show.
+        info "Port 5000 is held by macOS's AirPlay Receiver, so it cannot start."
+        info "Turn it off: $AIRLOCK_AIRPLAY_FIX"
+        info "Then:        ./start-all.sh"
+        verdict "macOS's AirPlay Receiver holds port 5000, so the backend cannot start"
+    else
+        info "Nothing serves /api, so the UI cannot be told that setup is needed."
+        info "Start it:  ./start-all.sh        (or: cd systems/backend && ./start-podman.sh)"
+        info "Then:      tail -50 logs/backend.log"
+        verdict "the backend is not running"
+    fi
 else
     USERS="$(podman exec workflow-backend python3 -c '
 import sqlite3, sys

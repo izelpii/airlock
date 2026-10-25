@@ -73,6 +73,9 @@ airlock_venv_state() {
   if ! _version_at_least "$ver" "$AIRLOCK_PYTHON_MIN"; then
     echo "wrong-python built with Python $ver, below the $AIRLOCK_PYTHON_MIN floor"; return
   fi
+  if ! _python_in_range "$ver"; then
+    echo "wrong-python built with Python $ver, above the $AIRLOCK_PYTHON_MAX ceiling"; return
+  fi
   if [[ ! -x "$venv/bin/$entry" ]]; then
     echo "incomplete $entry is not installed in it"; return
   fi
@@ -141,7 +144,7 @@ airlock_venv_ensure() {
     echo >&2
     echo "!! installing $reqs failed, so this service cannot start natively." >&2
     echo "   Nothing was stamped, so the next start will try again." >&2
-    echo "   Interpreter: $py ($ver), floor $AIRLOCK_PYTHON_MIN" >&2
+    echo "   Interpreter: $py ($ver), allowed $AIRLOCK_PYTHON_MIN to $AIRLOCK_PYTHON_MAX" >&2
     echo "   To run this service in a container instead - which carries its own" >&2
     echo "   Python and needs nothing from this host - set in deploy/airlock.env:" >&2
     echo "     AIRLOCK_${AIRLOCK_SERVICE:-SERVICE}_MODE=container" >&2

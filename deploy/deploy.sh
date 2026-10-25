@@ -219,6 +219,14 @@ fi
 # does not exist. See deploy/README.md, "The first run".
 echo
 echo "── Privileged ports ─────────────────────────────────────────────────────"
+# The backend's own port first: on a new Mac, macOS's AirPlay Receiver holds 5000.
+case "$(airlock_backend_port_status 5000)" in
+  free)    ok "port 5000 is free for the backend" ;;
+  airlock) ok "port 5000 is this stack's backend" ;;
+  *) while IFS= read -r _line; do
+       if [[ "$_line" == "  "* ]]; then warn "$_line"; else bad "$_line"; fi
+     done <<< "$(airlock_backend_port_problem 5000)" ;;
+esac
 FLOOR="$(_unprivileged_port_floor)"
 if [[ -z "$FLOOR" ]]; then
   if [[ "$OS" == "Darwin" ]]; then
@@ -391,7 +399,7 @@ NATIVE_PENDING=0
 
 PY_STATUS="$(airlock_python_status)"
 if [[ "$PY_STATUS" == ok* ]]; then
-  ok "python ${PY_STATUS#ok }  (floor $AIRLOCK_PYTHON_MIN, containers use 3.12)"
+  ok "python ${PY_STATUS#ok }  ($AIRLOCK_PYTHON_MIN to $AIRLOCK_PYTHON_MAX, containers use 3.12)"
 else
   warn "${PY_STATUS#no: }"
 fi

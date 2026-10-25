@@ -8,8 +8,11 @@ On the host you need:
 - podman 4.7 or higher (on macOS, a running `podman machine`; give it ≥ 6 GB)
 - curl and openssl (health checks and the gateway's certificate)
 - Ollama, for photo descriptions and album prompts (optional for the rest)
-- Python 3.10 or higher and ffmpeg, only for the services that can run
-  natively (deepface, transcode); without them those run in containers too
+- Python 3.10 to 3.13 (3.12 preferred) and ffmpeg, only for the services that
+  can run natively (deepface, transcode); without them those run in containers too
+- **On macOS: turn off the AirPlay Receiver** (System Settings → General →
+  AirDrop & Handoff). It listens on port 5000, which the backend needs; with it
+  on, the backend cannot start. `start-all.sh` stops and says so.
 
 See the Prerequisites section of the [README](../../README.md) for the details.
 

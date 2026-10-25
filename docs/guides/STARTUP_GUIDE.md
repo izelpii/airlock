@@ -9,8 +9,12 @@ Before running the startup script, ensure you have the following installed:
 - **podman 4.7+** - Runs every service (on macOS, a running `podman machine` with ≥ 6 GB)
 - **curl** and **openssl** - Health checks and the gateway's certificate
 - **Ollama** on the host - For the vision and albums services
-- **Python 3.10+** and **ffmpeg** - Only for `backend-deepface` and
-  `backend-transcode` when they run natively; otherwise they run in containers
+- **Python 3.10 to 3.13** (3.12 preferred) and **ffmpeg** - Only for
+  `backend-deepface` and `backend-transcode` when they run natively; otherwise
+  they run in containers
+- **On macOS, the AirPlay Receiver turned off** (System Settings → General →
+  AirDrop & Handoff) - it holds port 5000, the backend's port. `start-all.sh`,
+  `deploy/deploy.sh --check` and `deploy/diagnose-first-run.sh` all detect it
 
 On a new machine, run `./deploy/deploy.sh` once first: it checks these, writes
 `deploy/airlock.env`, creates the bind-mounted directories and the gateway's

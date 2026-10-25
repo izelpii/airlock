@@ -102,7 +102,7 @@ setup_venv() {  # setup_venv [--setup]
   # If Apple ships a plugin for your TensorFlow version, install it by hand:
   #   https://developer.apple.com/metal/tensorflow-plugin/
   if [[ "$AIRLOCK_OS" == "Darwin" && "$AIRLOCK_ARCH" == "arm64" ]]; then
-    _tf_ver="$("$VENV/bin/python3" -m pip show tensorflow 2>/dev/null | awk '/^Version:/{print $2}')"
+    _tf_ver="$("$VENV/bin/python3" -m pip show tensorflow 2>/dev/null | awk '/^Version:/{print $2}' || true)"
     echo "==> Apple Silicon, tensorflow ${_tf_ver:-unknown}"
     echo "    tensorflow-metal supports TensorFlow <= 2.18 and is not installed."
     echo "    Detection does not use it. See INGESTION_PERFORMANCE.md."

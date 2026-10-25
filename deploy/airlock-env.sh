@@ -342,7 +342,7 @@ airlock_build_scratch() {
   local root graph d
   root="${AIRLOCK_BUILD_TMPDIR:-}"
   if [[ -z "$root" ]]; then
-    graph="$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null)"
+    graph="$(podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)"
     # Must exist ON THIS MACHINE. On macOS the store lives inside the podman
     # VM, so podman reports a path like /var/home/core/... that the Mac has no
     # business creating - and the build happens in the VM, where none of this
@@ -363,7 +363,27 @@ airlock_build_scratch() {
 # Everything a build wants doing first. Called by every start-podman.sh in
 # place of the prune alone, so the scratch directory is set for the build that
 # follows rather than per service.
+#
+# Podman is asked first, out loud. Every caller runs under `set -e`, and on a
+# new Mac whose podman machine was not running, a silenced `podman info` in the
+# scratch step ended the start script right after "Building ... image" - with
+# no error at all. Now the failure is podman's own message and the fix.
 airlock_prepare_build() {
+  local err
+  # A plain `podman info`, no --format: a template naming a field a newer podman
+  # renamed would fail here with podman working perfectly well.
+  if ! err="$(podman info 2>&1 >/dev/null)"; then
+    echo "!! podman is not answering, so nothing can be built:" >&2
+    printf '%s\n' "$err" | tail -3 | sed 's/^/     /' >&2
+    if [[ "$AIRLOCK_OS" == "Darwin" ]]; then
+      echo "   On a Mac the containers run in a podman machine. Check and start it:" >&2
+      echo "     podman machine list" >&2
+      echo "     podman machine start        (podman machine init first, if there is none)" >&2
+    else
+      echo "   Check: podman info" >&2
+    fi
+    return 1
+  fi
   airlock_build_scratch
   airlock_prune_old_images
 }
@@ -507,13 +527,29 @@ airlock_nvidia_status() {
 #
 # The containers are built FROM python:3.12-slim, so 3.12 is the version this
 # requirement set is actually tested against. 3.10 is the floor.
+#
+# 3.13 is the CEILING. deepface needs TensorFlow, which publishes wheels for a
+# range of Python versions and reaches a new one months after it ships: on a
+# new Mac whose Homebrew python3 was 3.14, pip found no TensorFlow at all and
+# stopped with ResolutionImpossible (TensorFlow 2.21 has wheels for 3.12 and
+# 3.13, none for 3.14). Raise it once TensorFlow publishes for a newer Python.
 AIRLOCK_PYTHON_MIN="${AIRLOCK_PYTHON_MIN:-3.10}"
+AIRLOCK_PYTHON_MAX="${AIRLOCK_PYTHON_MAX:-3.13}"
 
 _python_version() { "$1" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true; }
 
-# Prints the path of an interpreter at least AIRLOCK_PYTHON_MIN, or nothing.
-# Newest first: a 3.9 that happens to be called python3 must not win over a
-# 3.12 that is called python3.12.
+# True when <version> is within [AIRLOCK_PYTHON_MIN, AIRLOCK_PYTHON_MAX].
+_python_in_range() {
+  local v="$1" maj min
+  _version_at_least "$v" "$AIRLOCK_PYTHON_MIN" || return 1
+  IFS=. read -r maj min _ <<< "$AIRLOCK_PYTHON_MAX"
+  ! _version_at_least "$v" "$maj.$(( ${min:-0} + 1 ))"
+}
+
+# Prints the path of an interpreter within [AIRLOCK_PYTHON_MIN,
+# AIRLOCK_PYTHON_MAX], or nothing. The tested 3.12 first, then the other
+# versions in range: a 3.9 or a 3.14 that happens to be called python3 must not
+# win over a 3.12 that is called python3.12.
 # Prints nothing and RETURNS 0 when there is none: every caller assigns this in
 # a command substitution, and under `set -e` a non-zero return there would kill
 # the script before it could report the problem with its own fix attached.
@@ -525,11 +561,11 @@ airlock_python() {
     command -v "$AIRLOCK_PYTHON" 2>/dev/null || true
     return 0
   fi
-  for cand in python3.14 python3.13 python3.12 python3.11 python3.10 python3 python; do
+  for cand in python3.12 python3.13 python3.11 python3.10 python3 python; do
     command -v "$cand" >/dev/null 2>&1 || continue
     ver="$(_python_version "$cand" || true)"
     [[ -n "$ver" ]] || continue
-    if _version_at_least "$ver" "$AIRLOCK_PYTHON_MIN"; then
+    if _python_in_range "$ver"; then
       command -v "$cand"; return 0
     fi
   done
@@ -545,7 +581,7 @@ airlock_python_status() {
     echo "ok $py ($(_python_version "$py" || true))"; return 0
   fi
   ver="$(_python_version python3 || true)"
-  echo "no: no python >= $AIRLOCK_PYTHON_MIN found${ver:+ (python3 is $ver)}; install it with: $(airlock_install_hint python)"
+  echo "no: no python from $AIRLOCK_PYTHON_MIN to $AIRLOCK_PYTHON_MAX found${ver:+ (python3 is $ver)}; install it with: $(airlock_install_hint python)"
 }
 
 # ffmpeg and ffprobe, which host-mode transcode shells out to. The container
@@ -556,6 +592,63 @@ airlock_ffmpeg_status() {
   else
     echo "no: ffmpeg/ffprobe not on PATH; install them with: $(airlock_install_hint ffmpeg)"
   fi
+}
+
+# ── The backend's port, and macOS's AirPlay Receiver ──────────────────────────
+# The backend publishes port 5000. Since macOS Monterey the AirPlay Receiver
+# (ControlCenter) listens on 5000 too, so on a new Mac the backend container
+# cannot bind it and never starts - while :5000 still answers, with an HTTP 403
+# from AirPlay, and the gateway passes that 403 on for every /api call. Nothing
+# in that reads as "the port is taken" (found installing on a new Mac mini,
+# 2026-10-25), so every start names it before the backend is started.
+#
+# airlock_backend_port_status [port] -> one of
+#   free               nothing listens
+#   airlock            this stack's backend is already running (it is replaced)
+#   airplay            macOS AirPlay Receiver holds it
+#   other <who>        something else holds it
+AIRLOCK_AIRPLAY_FIX="System Settings > General > AirDrop & Handoff > AirPlay Receiver: off"
+airlock_backend_port_status() {
+  local port="${1:-5000}" headers server who
+  if [[ "$port" == 5000 ]] && command -v podman >/dev/null 2>&1 \
+     && [[ "$(podman inspect -f '{{.State.Running}}' workflow-backend 2>/dev/null)" == "true" ]]; then
+    echo "airlock"; return 0
+  fi
+  # The reply's headers: empty when nothing listens. AirPlay announces itself
+  # in them, as `Server: AirTunes/<version>`.
+  headers="$(curl -s -o /dev/null -D - --max-time 2 "http://127.0.0.1:$port/" 2>/dev/null \
+             | tr -d '\r' || true)"
+  server="$(printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="server" {print $2; exit}')"
+  if [[ "$server" == AirTunes* ]]; then
+    echo "airplay"; return 0
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    who="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 " (pid " $2 ")"}')"
+  fi
+  case "$who" in
+    ControlCe*) echo "airplay"; return 0 ;;
+    gvproxy*)   echo "other another podman container (see: podman ps)"; return 0 ;;
+    ?*)         echo "other $who"; return 0 ;;
+  esac
+  # Something answered HTTP but lsof could not name it (another user's process).
+  if [[ "$headers" == HTTP/* ]]; then
+    echo "other a server${server:+ ($server)}"; return 0
+  fi
+  echo "free"
+}
+
+# The lines to print when the backend's port is taken; empty when it is not.
+airlock_backend_port_problem() {
+  local status
+  status="$(airlock_backend_port_status "${1:-5000}")"
+  case "$status" in
+    airplay)
+      echo "port ${1:-5000} is held by macOS's AirPlay Receiver, so the backend cannot start"
+      echo "  turn it off: $AIRLOCK_AIRPLAY_FIX" ;;
+    other\ *)
+      echo "port ${1:-5000} is already in use by ${status#other }, so the backend cannot start"
+      echo "  stop that program, then start again" ;;
+  esac
 }
 
 # The command that installs a missing host tool here. One place, because every
@@ -598,7 +691,7 @@ airlock_container_memory_mb() {
     # The running machine's allocation. Reported in bytes by some podman
     # versions and in MB by others, so a value that looks like bytes is scaled.
     local mem
-    mem="$(podman machine inspect --format '{{.Resources.Memory}}' 2>/dev/null | head -1)"
+    mem="$(podman machine inspect --format '{{.Resources.Memory}}' 2>/dev/null | head -1 || true)"
     [[ "$mem" =~ ^[0-9]+$ ]] || return 0
     (( mem > 1048576 )) && mem=$(( mem / 1048576 ))
     echo "$mem"

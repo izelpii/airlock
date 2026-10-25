@@ -363,7 +363,7 @@ fi
 echo "  platform        $(airlock_platform)"
 _py_status="$(airlock_python_status)"
 if [[ "$_py_status" == ok* ]]; then
-  ok "python ${_py_status#ok }  (native services need >= $AIRLOCK_PYTHON_MIN)"
+  ok "python ${_py_status#ok }  (native services need $AIRLOCK_PYTHON_MIN to $AIRLOCK_PYTHON_MAX)"
 else
   warn "${_py_status#no: }"
   warn "  native services will run in containers instead"
@@ -374,6 +374,17 @@ if [[ "$_ff_status" == ok* ]]; then
 else
   warn "${_ff_status#no: }"
   warn "  backend-transcode will run in a container (no VideoToolbox/NVENC)"
+fi
+
+# The backend's port. Fatal, and checked before anything starts: a taken :5000
+# leaves the backend down while :5000 still answers - with AirPlay's 403 on a
+# new Mac - which no later message would explain (airlock_backend_port_status).
+_port_problem="$(airlock_backend_port_problem 5000)"
+if [[ -n "$_port_problem" ]]; then
+  while IFS= read -r _line; do printf "  \033[31m✗\033[0m %s\n" "$_line"; done <<< "$_port_problem"
+  echo
+  echo "Fix that, then run ./start-all.sh again."
+  exit 1
 fi
 
 # How much memory a CONTAINER can have - on macOS the podman VM's allocation,

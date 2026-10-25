@@ -155,7 +155,7 @@ table is the short list of what has to be on the **host** itself.
 | Dependency | Minimum Version | Purpose |
 |---|---|---|
 | podman | 4.7+ recommended | Runs every containerised service |
-| Python | **3.10+** | The services that run natively (3.12 is what the images use) |
+| Python | **3.10 to 3.13** | The services that run natively (3.12 is what the images use, and is preferred) |
 | ffmpeg + ffprobe | any | Native `backend-transcode` only (hardware video previews) |
 | ExifTool | any | EXIF metadata extraction (must be in `PATH`) |
 | Ollama | any | Local vision AI for image descriptions |
@@ -165,8 +165,16 @@ table is the short list of what has to be on the **host** itself.
 TensorFlow, neither of which publishes anything for 3.9. A venv built with
 Apple's bundled `python3` — 3.9.6, and still what bare `python3` resolves to on
 a Mac with Homebrew Python installed — cannot install these requirements at all.
-The start scripts therefore pick the newest `python3.1x` on `PATH` rather than
-trusting `python3`; override with `AIRLOCK_PYTHON` in `deploy/airlock.env`.
+Nor can one that is too **new**: TensorFlow publishes wheels for 3.13 at most
+today, so a Mac whose newest Python is 3.14 fails the same way. The start
+scripts therefore take a `python3.1x` from 3.10 to 3.13 (`AIRLOCK_PYTHON_MIN`,
+`AIRLOCK_PYTHON_MAX`), preferring 3.12, rather than trusting `python3`; override
+with `AIRLOCK_PYTHON` in `deploy/airlock.env`.
+
+**On macOS, turn off the AirPlay Receiver** (System Settings → General →
+AirDrop & Handoff). Since macOS Monterey it listens on port 5000, the backend's
+port: with it on, the backend cannot start, and `:5000` answers with AirPlay's
+HTTP 403 instead. `start-all.sh` checks this first and stops with the fix.
 
 Missing either of the first two costs an *accelerator*, not a service: the mode
 for that service falls back to a container, which carries its own Python and

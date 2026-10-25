@@ -124,8 +124,12 @@ if reason="$(needs_build "${1:-}")"; then
   # `git describe` adds how far past the release this build is; without a tag or
   # without git, the VERSION file alone still answers.
   _repo_root="$(cd "$SCRIPT_DIR/../.." && pwd)"
-  _version="$(cat "$_repo_root/VERSION" 2>/dev/null | tr -d '[:space:]')"
-  _described="$(git -C "$_repo_root" describe --tags --long --dirty 2>/dev/null)"
+  _version="$(cat "$_repo_root/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+  # `|| true`, because this script runs under `set -e`: in a copy with no tags
+  # (a shallow clone) or no working git (a new Mac's /usr/bin/git is only a stub
+  # until the Command Line Tools are installed), describe fails - and a failed
+  # assignment ended the script right after "Building ... image", silently.
+  _described="$(git -C "$_repo_root" describe --tags --long --dirty 2>/dev/null || true)"
   if [[ -n "$_described" && "$_described" != *-0-g* ]]; then
     # v5.0.0-12-gabc1234 -> 5.0.0+12.abc1234, matching version.py
     _count="$(echo "$_described" | awk -F- '{print $(NF-1)}')"
@@ -173,6 +177,14 @@ if ! _smoke="$(podman run --rm --entrypoint python3 \
   exit 1
 fi
 echo "    $(echo "$_smoke" | tail -1)"
+
+# Port 5000 must be free (or this backend's own): on a new Mac, macOS's AirPlay
+# Receiver holds it, and the container then cannot start at all.
+_port_problem="$(airlock_backend_port_problem 5000)"
+if [[ -n "$_port_problem" ]]; then
+  echo "$_port_problem" >&2
+  exit 1
+fi
 
 echo "Starting workflow-backend on http://localhost:5000"
 # ── Input directory preflight ─────────────────────────────────────────────────

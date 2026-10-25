@@ -12,6 +12,8 @@ has accumulated that it is a different product.
 
 ## 6.4
 
+- **v6.4.7** (2026-10-25) — A new Mac's install says what stops it
+- **v6.4.6** (2026-10-25) — Native services pick a Python TensorFlow supports
 - **v6.4.5** (2026-10-25) — Public documents brought up to date; the Shoebox names retired
 - **v6.4.4** (2026-10-25) — The public kit covers family names and places
 - **v6.4.3** (2026-10-25) — Maps start from a neutral place
