@@ -7,8 +7,7 @@
 # that no public CA can ever issue for (.lan). It creates two things:
 #
 #   airlock-ca.pem    the root certificate. Install this once per device that
-#                     will use airlock, and browsers stop warning. (A CA made
-#                     before the rename is shoebox-ca.pem and is kept - below.)
+#                     will use airlock, and browsers stop warning.
 #   fullchain.pem     the certificate nginx serves, plus the root, concatenated.
 #   privkey.pem       its private key.
 #
@@ -42,7 +41,7 @@
 # ignore a DNS entry that looks like an address.
 #
 # EVERY CA GETS ITS OWN NAME. This script used to call every CA it made
-# "Shoebox Local CA", so two machines running it produced two DIFFERENT keys
+# by one fixed name, so two machines running it produced two DIFFERENT keys
 # under one identical name. A browser that had trusted the first then met the
 # second, looked the issuer up BY NAME, found the key it already had, and failed
 # the signature check - reporting SEC_ERROR_BAD_SIGNATURE, which reads like a
@@ -55,13 +54,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CERT_DIR="$SCRIPT_DIR/certs"
 
-# A CA made before the rename to airlock (v5.6.4) is shoebox-ca.* and is used
-# as it is: every device that trusts it would otherwise have to trust a new
-# one. Only a machine with no CA yet gets airlock-ca.*. Looking for one name
-# only would quietly make a NEW CA on every machine that has the old one.
 CA_NAME=airlock-ca
+# A CA kept under its pre-rename file name must be renamed, not replaced: every
+# device that trusts it would otherwise have to trust a new one. Stop rather
+# than quietly make a second CA beside it. The files are only renamed; the
+# certificate - and so every device's trust - is unchanged.
 if [[ ! -f "$CERT_DIR/airlock-ca.pem" && -f "$CERT_DIR/shoebox-ca.pem" ]]; then
-  CA_NAME=shoebox-ca
+  echo "This machine's CA is still named shoebox-ca.*. Rename it, then run this again:" >&2
+  echo "  cd $CERT_DIR && for f in shoebox-ca.*; do mv \"\$f\" \"airlock-ca.\${f#shoebox-ca.}\"; done" >&2
+  exit 1
 fi
 CA_KEY="$CERT_DIR/$CA_NAME.key"
 CA_CRT="$CERT_DIR/$CA_NAME.pem"
@@ -108,11 +109,6 @@ chmod 700 "$CERT_DIR"
 SANS=(
   "DNS:airlock.lan"
   "DNS:*.airlock.lan"
-  # The names before the rename (v5.6.4). The gateway redirects them to
-  # airlock.lan, and a redirect over https needs the certificate to cover the
-  # name it was asked for. Kept for good: old links are opened years later.
-  "DNS:shoebox.lan"
-  "DNS:*.shoebox.lan"
   "DNS:localhost"
   "IP:127.0.0.1"
 )

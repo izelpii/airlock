@@ -13,13 +13,22 @@ The instance only needs **port 443** open to the world. Port 80 stays closed.
 The packer itself is described in [PACKING-TOOL.md](PACKING-TOOL.md). This guide
 covers the AWS side and does not repeat it.
 
+**Airlock can now do steps 4–6 for you.** Since v6.2.0, a deployment card has a
+**Publish to AWS** button (owners): the first time, it adds the instance as a
+server; then **Set up** once, and **Publish to AWS** after each change. It packs, sends only what changed, keeps `.env`,
+and checks the site. You still do steps 1–3 (the instance, DNS, Docker and the
+gallery image) yourself; Airlock never holds AWS credentials. The user guide
+[PUBLISH_TO_EC2.md](../guides/PUBLISH_TO_EC2.md) walks through both the button
+(§3A) and the same work by hand with `tools/pack_deployment.py --stage` and
+`rsync`. The by-hand steps below still work.
+
 ---
 
 ## Why this shape
 
 | Choice | Why |
 |---|---|
-| **A packed bundle**, not the shoebox stack | The instance gets the album's derivatives and nothing else: no originals, no catalog database, no backend, and no network path back home. A 3.9 GB catalog packs to ~38 MB. |
+| **A packed bundle**, not the Airlock stack | The instance gets the album's derivatives and nothing else: no originals, no catalog database, no backend, and no network path back home. A 3.9 GB catalog packs to ~38 MB. |
 | **Docker Compose + Caddy** (`--target node`) | It is what the packer emits. Caddy obtains and renews the TLS certificate on its own, and the gallery server enforces the deployment's password. |
 | **One EC2 instance** | A gallery is static files plus a small Node server. There is nothing here that needs a load balancer, ECS or Kubernetes. |
 | **HTTPS only** | Caddy proves domain ownership to Let's Encrypt over port 443 itself (the TLS-ALPN challenge), so port 80 is never opened. |
@@ -36,7 +45,7 @@ approach in this guide. See [Alternatives](#alternatives).
 
 - An AWS account, and the AWS CLI configured on this Mac (`aws configure`).
 - A domain name you can add DNS records to, e.g. `photos.example.com`.
-- The deployment **published** in shoebox (**Albums → Deployments**). Check
+- The deployment **published** in Airlock (**Systems → Deployments**). Check
   *What to pack* on the back of its card first: every ticked size ends up in
   the bundle, and *Full resolution JPG* makes it several times larger.
 
@@ -209,8 +218,13 @@ not necessarily the Mac's. This Mac is Arm; an image built for it without
 cd systems/album-gallery
 podman build --platform linux/amd64 \
   --ignorefile .dockerignore -f Dockerfile \
+  --build-arg GALLERY_REVISION=$(git log -1 --format=%h -- .) \
   -t album-gallery:amd64 .
 ```
+
+`GALLERY_REVISION` is optional. The gallery reports it at `/health`, so you can
+tell which version a server runs, and the **Publish to AWS** button uses it to
+point out a server running an older gallery.
 
 Building for Intel on this Mac runs under emulation. It takes a few minutes
 rather than seconds, and it works.
@@ -307,6 +321,10 @@ touches the catalog database.
 Read the summary it prints. **`dereferenced`** is the real size of what you are
 about to upload.
 
+`--target node` (Compose + Caddy) is the default. To keep the bundle as a folder
+that later runs refresh in place, instead of a tarball, add `--stage ./dist/stage`
+(see [Updating](#the-album-changed)).
+
 ---
 
 ## 5. Start it on the instance
@@ -367,7 +385,7 @@ the album.
 
 A bundle is a snapshot; nothing syncs by itself.
 
-1. Change the album in shoebox, and **publish** the deployment.
+1. Change the album in Airlock, and **publish** the deployment.
 2. Re-run the packer (step 4).
 3. Send only the data, deleting files the album no longer has:
 
@@ -379,11 +397,17 @@ A bundle is a snapshot; nothing syncs by itself.
      ubuntu@photos.example.com:galleries/album2026/catalogs/
    ```
 
-4. On the instance: `cd ~/galleries/album2026 && docker compose restart gallery`
+No restart is needed: the gallery reads the album's files on each request.
 
 `rsync --delete` matters: extracting a new tarball on top of the old one
 would leave photos you removed still reachable. `.env`, `compose.yml` and the
 Caddyfile are not touched, so the certificate and viewers' sessions survive.
+
+A tarball's files carry the packing time, so this sends every photo again. For
+an update that sends only what changed, pack with `--stage` and rsync the staged
+folder with `--delete --exclude=/.env`, as in
+[PUBLISH_TO_EC2.md §7](../guides/PUBLISH_TO_EC2.md#7-updating-the-gallery), or use
+the **Publish** button, which does the same.
 
 ### The gallery app changed
 

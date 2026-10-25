@@ -1,7 +1,8 @@
 # Ports to Named Endpoints — Implementation Specification
 
-**Status:** phases 1-3 implemented. Phase 4 (LAN DNS) open. See section 9.1 for one
-deliberate deviation from the plan below.
+**Status:** phases 1-3 implemented; the gateway is already in `v4.0.0`, the first commit in
+this repository. Phase 4 (LAN DNS) and phase 5 (one pod) still open at `v6.4.4`. See section 9.1
+for one deliberate deviation from the plan below.
 **Decision:** the browser uses **same-origin paths** under `shoebox.lan`, not a `backend.shoebox.lan`
 subdomain. Service subdomains still exist for service-to-service calls and direct access. Settled;
 see section 5 for the reasoning.
@@ -9,6 +10,23 @@ see section 5 for the reasoning.
 **Related:** `documentation/architecture/CONTAINERIZATION_AUDIT.md`,
 `documentation/features/CONTAINERIZATION_TRADEOFFS.md`,
 `documentation/features/combining-backends.md`
+
+> **What changed since (as of v6.4.4, 2026-10-25):**
+> - **Names.** `shoebox.lan` became `airlock.lan` in v5.6.4 (`name-migration-spec.md`). The old
+>   names answered with a 301 until v6.4.5, and are no longer served at all. This spec keeps the
+>   old names as written: read `shoebox.lan` as `airlock.lan` throughout.
+> - **TLS and sign-in** (out of scope in §11) came in v4.1.0: the gateway serves HTTPS on 443 and
+>   redirects :80 to it (`airlock.conf.template:44-77`); sign-in lives in the backend
+>   (`user-authentication-spec.md`). The `<service>.airlock.lan` blocks stay plain HTTP on :80.
+> - **More services:** `backend-transcode` (:5004, v4.9.0) is *not* routed by the gateway - the
+>   backend calls `http://transcode.airlock.lan:5004` directly (`systems/backend/backend-pod.yaml:69`);
+>   `backend-pets` (:5006, v5.2.0) is `pets.airlock.lan`; the gateway also serves `/gallery/` and
+>   `<catalog>.airlock.lan` album sites (`airlock.conf.template:192,257`).
+> - **deepface** is no longer always on the host: since v4.9.0 it runs native or in a container
+>   (`accelerated-services-spec.md`).
+> - **The gateway reaches the host as `airlock-host`**, a name set only by `--add-host`, not
+>   `host.containers.internal` (v5.13.1; `systems/gateway/start-podman.sh:24-30`).
+> - The real config file is `systems/gateway/airlock.conf.template`, not `nginx.conf`.
 
 ---
 
@@ -48,9 +66,16 @@ macOS and would collide.
      podman's Linux VM). The gateway must reach it at host.containers.internal.
 ```
 
+> **Since v4.9.0 / v5.13.1:** deepface runs native *or* in a container, by `AIRLOCK_DEEPFACE_MODE`
+> (`deploy/airlock-env.sh`, `airlock_service_mode`), and either way publishes :5001 on the host;
+> the gateway reaches the host as `airlock-host` (`systems/gateway/start-podman.sh:30`).
+
 ---
 
 ## 2. Current state
+
+> As of the time of writing (2026-09-04). Today there are ten, plus Ollama: see
+> `docs/architecture/ARCHITECTURE.md`, "Services".
 
 Eight services, each published on its own host port, in **separate pods with no shared network
 namespace and no DNS between them**. That last fact is the structural reason this migration is
@@ -94,6 +119,11 @@ The names split into two groups, and which group a caller uses is a decision, no
 
 The single most consequential line in that table is the first one: the browser gets the API from the
 same origin as the page, which is what keeps the backend address out of the compiled bundle.
+
+> **As of v6.4.4:** every name is under `airlock.lan` (v5.6.4). Added since: `pets.airlock.lan`
+> (:5006), `transcode.airlock.lan` (resolved by the containers, not routed by the gateway), the
+> `/gallery/` path and `<catalog>.airlock.lan` for published albums
+> (`systems/gateway/hosts-entries.txt`, `airlock.conf.template:29-37`).
 
 ---
 
@@ -224,6 +254,11 @@ The restriction is inside the podman machine's Linux VM, not on macOS. Two suppo
 remedy rather than as a wall of rootlessport output. `start-all.sh` greps the log for this specific
 error and prints the fix.
 
+> **Since v4.1.0:** the gateway publishes 443 as well as 80 (`systems/gateway/start-podman.sh:195-196`),
+> and both must be allowed; the 8080 escape hatch pairs with `TLS_PORT=8443`
+> (`start-podman.sh:150-179`). The sysctl file keeps its old name,
+> `99-shoebox-unprivileged-ports.conf` (`enable-port-80.sh:28`).
+
 ---
 
 ## 5. The frontend: same-origin paths
@@ -304,6 +339,9 @@ copy-pasteable and version-controlled rather than folklore.
 `/etc/hosts` has no wildcard support, so a new service means a new line. With eight services that
 is acceptable; if the count grows, move to the dnsmasq option below.
 
+> **As of v6.4.4:** `hosts-entries.txt` lists ten `*.airlock.lan` names, `transcode` and `pets`
+> included.
+
 ### 6.2 Other devices on the LAN (phones, laptops)
 
 `/etc/hosts` does not help them. This is where the draft's DNS container earns its place:
@@ -347,6 +385,10 @@ podman VM (`CONTAINERIZATION_AUDIT.md`, "Why containerizing it can never use the
 - `start-host.sh` binds `0.0.0.0` specifically so containers can reach it; that must not change.
 - The host process itself is not behind the gateway, so a direct `localhost:5001` still works and
   should keep working — it is what `start-host.sh --check` and `bench_ingest.py` use.
+
+> **Since v4.9.0:** this applies only when deepface runs native (macOS on Apple Silicon by
+> default). On Linux and Intel Macs it runs in a container that publishes :5001, and the gateway
+> reaches it the same way, through the host (`airlock-host:5001`).
 
 ---
 
@@ -451,6 +493,11 @@ consequences:
 2. When you do tighten it, `cors_allowed_origins` should list `http://shoebox.lan` and whatever LAN
    address is in use — not `*`.
 
+> **Done for the backend:** it accepts only `AIRLOCK_ALLOWED_ORIGINS` (default `airlock.lan`,
+> the `shoebox.lan` origins until the rename's fallbacks go, and `localhost:3000/5000`), for both
+> Flask-CORS and Socket.IO (`systems/backend/app.py:69-76,117`); `deploy/airlock-env.sh` adds the
+> machine's own address. The other services still use blanket `CORS(app)`.
+
 ---
 
 ## 9. Phases
@@ -522,6 +569,8 @@ migration.
 **Acceptance:** the UI loads on a phone at `http://shoebox.lan` with no rebuild and no `/etc/hosts`
 edit on that device.
 
+> **Still open at v6.4.4:** there is no dnsmasq in the repository.
+
 ### Phase 5 — One pod, ports closed (not started)
 - [ ] Merge the seven pod manifests into one with a shared network namespace
 - [ ] Gateway upstreams become `localhost:<port>`
@@ -529,6 +578,8 @@ edit on that device.
 - [ ] Rework `start-all.sh` / `stop-all.sh` around a single pod lifecycle
 
 **Acceptance:** `podman ps` shows exactly one published port, and the full pipeline still runs.
+
+> **Still not started at v6.4.4:** each service still has its own `*-pod.yaml` with a `hostPort`.
 
 ---
 
@@ -553,8 +604,11 @@ edit on that device.
 
 - **TLS.** LAN-only, no certificate authority, and `http://` keeps the browser from complaining
   about a self-signed cert. Add later if the deployment ever leaves the LAN.
+  *Since v4.1.0: the gateway terminates TLS with a certificate from a private CA
+  (`systems/gateway/make-certs.sh`); see `user-authentication-spec.md`.*
 - **Authentication at the gateway.** Nothing authenticates today; adding it here would be a
-  different project.
+  different project. *Since v4.1.0 the backend authenticates (`systems/backend/auth.py`); the
+  gateway itself still does not.*
 - **Collapsing services.** `documentation/features/combining-backends.md` proposes merging backend
   and deepface. That would reduce the number of names, but it is a separate decision and this
   migration does not depend on it either way.

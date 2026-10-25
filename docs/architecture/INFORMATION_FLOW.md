@@ -1,11 +1,14 @@
 # Information Flow
 
-> **Updated for v5.6.8 (2026-10-12).** The previous version (v4.0) showed the
-> browser calling `localhost` ports and workflows running as threads inside the
-> backend. Every request now goes through the gateway, sign-in comes first,
-> workflows run as queued subprocesses, and the face pipeline is six stages
-> instead of two. Ports are shown for orientation only: nothing in the
-> application uses them, only the gateway's names.
+> **Updated for v6.4.4 (2026-10-25).** Previously revised at v5.6.8
+> (2026-10-12), when the v4.0 picture of the browser calling `localhost` ports
+> and workflows running as threads inside the backend was replaced: every
+> request goes through the gateway, sign-in comes first, workflows run as
+> queued subprocesses, and the face pipeline is six stages instead of two.
+> Since then: overnight scheduling (section 2), publishing to a server and mass
+> transfers (8), search (9), photo editing (10) and catalog backups (11). Ports
+> are shown for orientation only: nothing in the application uses them, only
+> the gateway's names.
 
 ---
 
@@ -17,8 +20,7 @@ Browser ── https://airlock.lan/... ──► airlock-gateway (nginx :443, pr
     │   /                                   ├──► frontend :3000   (static React build)
     │   /api/..., /socket.io/...            ├──► backend  :5000
     │   /vision/..., /geoloc/...            ├──► vision :5003, geoloc :5002
-    │   /gallery/..., <catalog>.airlock.lan ├──► album-gallery :3001
-    │   http://shoebox.lan/...              └──► 301 to the same path on airlock.lan
+    │   /gallery/..., <catalog>.airlock.lan └──► album-gallery :3001
     ▼
 backend: auth check on every /api/ route except login, session and setup
     │   cookie airlock_session → sessions row in catalogs.db → user + per-catalog role
@@ -37,7 +39,7 @@ The exception is transcode, which the backend calls directly at
 ## 2. Running a workflow
 
 ```
-User clicks Run (Operations page), or a finished workflow triggers its dependants
+User clicks Run (Workflows page), or a finished workflow triggers its dependants
     │
     ▼
 POST /api/catalogs/<id>/queue  →  workflow_queue row in workflow_results.db
@@ -48,10 +50,16 @@ workflow_scheduler (thread in the backend, holds scheduler_lease in catalogs.db)
     ▼
 subprocess: python -u workflows/<script>.py --execution-id N --target-dir … --catalog-id …
     │  writes workflow_executions + its own tables
-    │  progress → backend → Socket.IO 'workflow_progress' → Operations / Import Progress pages
+    │  progress → backend → Socket.IO 'workflow_progress' → Workflows / Import Progress pages
     ▼
 on success: DEPENDS_ON (workflow_triggers.py) queues the next workflow in the chain
 ```
+
+A queue row can wait (`not_before`). Edits people make — tagging a face,
+changing events or locations — queue the workflows they affect after a quiet
+period, and tagging a face queues Match Faces by Appearance for the next 03:00
+(`NIGHTLY_LEARNING_AT`, `NIGHTLY_LEARNING_TZ`). Run on the Workflows page, or an
+import finishing, still starts it at once.
 
 A stop request is cooperative: the script checks for it between items and
 records itself as stopped. Restarting the backend container interrupts any
@@ -165,6 +173,8 @@ Photos or Event page → "Describe" → https://airlock.lan/vision/describe
   → backend-vision → Ollama (OLLAMA_MODEL) → description shown on the page
 ```
 
+---
+
 ## 8. Albums, deployments and transfers
 
 ```
@@ -177,20 +187,95 @@ Publish → backend writes the album folder cache/Albums/<id>/ (derivatives,
   → album-gallery serves https://<catalog>.airlock.lan/<slug>
 
 Pack     tools/pack_deployment.py → tarball with real files, compose.yml, Caddyfile
-Transfer magic-wormhole between two installations → cache/Transfers → imported album
+
+Publish to a server (owner only; publish.py, deployment_pack.py, publish_ssh.py)
+  → stage the bundle in cache/Publish (photos hard-linked, compose.yml, Caddyfile)
+  → Preview: rsync --dry-run over SSH (the server's own key, pinned host key)
+  → Publish: rsync media, then album data, then deletions; docker compose up -d
+    on the server if compose.yml or the Caddyfile changed; check the live site
+  → deployment_publish_runs (progress, log)
+
+Transfer  magic-wormhole between two installations, app id airlock.app/album-transfer
+  sender:   album originals → wormhole_runner.py subprocess (JSON events on stdout)
+            → public rendezvous and transit relays → the other Airlock
+  receiver: partial files in cache/Transfers/<id> → checked by SHA-256
+            → <catalog>/transfers/<id>[-label] once every file has arrived
+  backend:  a watcher thread keeps wormhole_transfers / wormhole_transfer_files
+            and the Transfers pages current; the runner touches no database
+  Mass transfer: one album to 2–20 people, one code each, grouped in
+            wormhole_transfer_batches with one deadline (at most three days)
 ```
 
 ---
 
-## 9. Where data lives
+## 9. Searching
+
+```
+Search page → GET /api/catalogs/<id>/search (words, key:value keywords, filters)
+  → search.py: one list of results, keyset-paged, capped count
+      catalog files (one per RAW+JPG pair), and duplicates an import turned
+      away (file_operations), each pointing to the file it copies
+      names matched through the FTS5 index (search_index.py: search_names, search_state)
+  → Save → saved_searches + saved_search_files, shared within the catalog
+           (saved-search-sweep deletes idle ones every six hours)
+```
+
+---
+
+## 10. Editing a photo
+
+```
+Photo → turn or flip → PUT /api/catalogs/<id>/files/<file_id>/edits (photo_edits.py)
+  → photo_edits (+ photo_edit_history); face and pet boxes moved in the same transaction
+  → every display rung, both thumbnails and the face crops rebuilt from the
+    original with the edit applied — the original is never written to
+  (photo-edit-resume finishes a rebuild a restart interrupted)
+```
+
+---
+
+## 11. Catalog backups
+
+```
+backup-scheduler (thread in the backend, each card's own schedule and timezone;
+                  waits while an import runs), or Back up now / Verify / Restore
+    │
+    ▼
+VACUUM INTO → cache/backup/workflow_results.snapshot.db (+ catalogs.snapshot.db)
+    │
+    ▼
+the card's tool, run by the backend inside its own container (backups.py):
+  restic   backup_restic.py → repository over SFTP; then forget with the card's retention
+  borg     backup_borg.py   → borg serve over SSH
+  rsync    backup_rsync.py  → a plain copy, newest only
+  each card with its own SSH key (database/backup-ssh/); secrets encrypted at rest
+    │
+    ▼
+backup_runs in catalogs.db: phase, progress, result → Backup tab, Dashboard,
+Workflows page (Scheduled backups)
+```
+
+Backups never go through the workflow queue. See
+[backups.md](../features/backups.md).
+
+---
+
+## 12. Where data lives
 
 ```
 systems/backend/database/catalogs.db     catalogs, storage routes, users, sessions,
-                                         access, alerts, user settings, scheduler lease
+                                         access, alerts, user settings, scheduler lease,
+                                         backup cards and runs
+systems/backend/database/backup-ssh/,    one SSH key per backup card / publish server
+                         publish-ssh/
 catalogs/<catalog>/workflow_results.db   everything about the catalog's files
 catalogs/<catalog>/Images|Videos|Others  originals (not in reference mode)
-catalogs/<catalog>/cache/…               derivatives, face crops, albums, deployments
-systems/backend-deepface/face_labels.db  deepface's own label index
+catalogs/<catalog>/cache/…               derivatives, face crops, albums, deployments,
+                                         transfer staging, backup snapshots
+catalogs/<catalog>/transfers/<id>        received albums
+license/                                 this copy's signed license (at /license, read-only)
+systems/backend-deepface/data/           deepface's own label index (face_labels.db) when
+                                         it runs natively; inside its container otherwise
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#data-architecture) for the tables.

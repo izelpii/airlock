@@ -43,7 +43,6 @@ to a port, so nothing else in the application refers to a port number.
 ║   /vision/ /geoloc/ → vision :5003, geoloc :5002                          ║
 ║   <svc>.airlock.lan (plain HTTP) → each service, for container-to-        ║
 ║                                    container calls                        ║
-║   shoebox.lan, *.shoebox.lan    → 301 to the airlock.lan name             ║
 ╚════════╤══════════════════════════════════╤═══════════════════════════════╝
          │                                  │
          ▼                                  ▼
@@ -82,8 +81,8 @@ to a port, so nothing else in the application refers to a port number.
    ┌─────────────────────────┐ ┌──────────────────────────┐ ┌───────────────────────┐
    │ backup host (backup-host)     │ │ publish server (e.g. EC2)│ │ magic-wormhole relays │
    │ restic over SFTP, borg, │ │ rsync + docker compose   │ │ public rendezvous and │
-   │ rsync - one locked-down │ │ over SSH; Caddy + the    │ │ transit, for album    │
-   │ SSH key per catalog     │ │ gallery image serve it   │ │ transfers between     │
+   │ rsync - a locked-down   │ │ over SSH; Caddy + the    │ │ transit, for album    │
+   │ SSH key per backup type │ │ gallery image serve it   │ │ transfers between     │
    └─────────────────────────┘ └──────────────────────────┘ │ Airlock installs      │
                                                             └───────────────────────┘
 ```
@@ -98,7 +97,7 @@ only when some catalog has pets turned on.
 
 | Service (`systems/…`) | Port | Gateway name | Runs as | Purpose |
 |---|---|---|---|---|
-| `gateway` | 80, 443 | `airlock.lan` | container `airlock-gateway` | TLS, routing, `shoebox.lan` redirects |
+| `gateway` | 80, 443 | `airlock.lan` | container `airlock-gateway` | TLS, routing |
 | `frontend` | 3000 | `/` on `airlock.lan` | container `workflow-frontend` | Main UI |
 | `backend` | 5000 | `/api/`, `backend.airlock.lan` | container `workflow-backend` | API, auth, workflows, data |
 | `backend-deepface` | 5001 | `deepface.airlock.lan` | native or container (see below) | Face detection and embeddings |
@@ -171,6 +170,9 @@ Main areas (routes in `App.js`):
 | Operations | `/workflows` (queue and pipeline diagram, with the catalog's backups), `/workflow-executions`, `/import-progress`, `/operations` (catalog report), `/catalogs` (with the Backup tab), `/alerts` |
 | Accounts | `/users`, `/users/:id` (each account's own page), `/admin`, `/settings` |
 
+In the sidebar, **Deployments** and **Workflows** sit under *Systems*; Albums
+holds the albums themselves and Transfers.
+
 The version badge beside the logo reads `/api/version`; without a valid license
 it is followed by a red *Unlicensed - No commercial use*, and with one the left
 panel ends with *Licensed to: …* ([License notice](#license-notice)).
@@ -233,7 +235,7 @@ Sign-in is on by default (`AIRLOCK_AUTH_REQUIRED=1`; read only through
   scrypt hashes (minimum 12 characters); sessions last 30 days.
 - Roles are **viewer, editor, owner**, granted per catalog.
 - The cookie is `airlock_session` (HttpOnly, SameSite=Lax, Secure behind
-  HTTPS). A `shoebox_session` cookie is still accepted and swapped until v5.7.
+  HTTPS).
 - Only login, session, first-run setup and `/gateway-health` are public. With
   no users yet, the UI offers first-run setup.
 - `systems/backend/manage_users.py` manages users from the command line.
@@ -294,8 +296,9 @@ scripts.
   refused. `tools/migrate_embedding_model.py` switches a catalog. Workers are
   sized to the memory available.
 - **backend-pets** — YOLOX-Tiny finds animals; a CLIP-ViT fine-tuned for animal
-  identity (512-d, ONNX) tells them apart. Off by default per catalog, and off
-  costs nothing: no tables, no calls, no container.
+  identity (512-d, ONNX) tells them apart. Chosen per catalog — on by default
+  for a new one — and a catalog with pets off costs nothing but empty tables:
+  no calls, and no container unless some other catalog has pets on.
 - **backend-transcode** — browser-playable video copies and poster frames on
   catalog-relative paths.
 - **backend-geoloc** — `GET /poi` returns named places near a coordinate
@@ -336,8 +339,11 @@ live and nothing else needs installing on this host.
 - `backup-scheduler` starts due backups; **Back up now** and **Verify** run the
   same code. Progress is reported live; a stale restic lock is cleared before a
   run, and exFAT sources use `--ignore-inode` so unchanged files are skipped.
-- Each card gets its **own** SSH key (`database/backup-ssh/`), which the owner
-  installs, restricted, on the backup host. Repository passwords and cloud keys
+- The installation has **one SSH key per backup type** — restic, borg, rsync —
+  in `database/backup-ssh/` (`backup_ssh.py`). Each is installed on the backup
+  host restricted to its one command (`sftp-server`, `borg serve`, `rrsync`),
+  which is why they are three: an `authorized_keys` line forces one command. A
+  backup host's own key is pinned the first time it is tested. Repository passwords and cloud keys
   are encrypted at rest with a key derived from `database/secret_key`
   (`backup_secrets.py`) and are never returned to the browser.
 - Backrest is not involved any more (v5.9.0): it runs on backup-host only, as an
@@ -374,7 +380,8 @@ to a server the owner runs — an EC2 instance, say
 - The deployment is packed into a staged **bundle** (`deployment_pack.py`, the
   same code as `tools/pack_deployment.py`): the album derivatives with their
   links resolved, `compose.yml`, a `Caddyfile` for the server's domain, and a
-  README. The gallery image is pulled on the server, not shipped.
+  README. The gallery image is not in the bundle: it is built here and loaded on
+  the server once (`docker load`, EC2 guide step 3), and updated separately.
 - **Preview** is an `rsync --dry-run`: files to send, to change and to delete,
   and the bytes. **Publish** sends in three passes — media, then album data,
   then deletions — so a visitor never sees a manifest naming a missing file,
@@ -437,7 +444,7 @@ Mounted at `/app/database`, beside the `secret_key` and `instance_id` files.
 
 Beside it in `database/`: `secret_key` (sessions, and the key backup secrets
 are encrypted with), `instance_id`, and the SSH keys Airlock made —
-`backup-ssh/` (one per backup card) and `publish-ssh/` (one per publish
+`backup-ssh/` (one per backup type) and `publish-ssh/` (one per publish
 server), each 0600 in a 0700 folder.
 
 The v4 `backend/workflows.db` and `backend/user_settings.db` are gone:
@@ -458,7 +465,7 @@ file_contents            master_datetime (the date, never missing), sha256, geoh
  │    ├── ai_face_contents / face_contents   crops + embeddings (+ embedding_model_id)
  │    ├── face_similarity_scores             face × person distances
  │    └── face_best_match                    best match per face, kept by triggers (v5.5.6)
- ├── pet_detections …    only when pets are enabled (pet_schema.py)
+ ├── pet_detections …    always present, empty unless pets are on (pet_schema.py)
  ├── event_files         → events
  ├── file_locations      → locations, location_clusters (where coordinates and place came from)
  └── tags
@@ -515,13 +522,13 @@ deleted from the source — only after the database commit. Duplicates go to
 - Python services run under gunicorn, not Flask's development server.
 - Per-machine settings live in `deploy/airlock.env` (template
   `deploy/airlock.env.example`). `deploy/deploy.sh` prepares a host,
-  `deploy/status.sh` reports on one. Old `SHOEBOX_*` names and
-  `deploy/shoebox.env` are still read (`env_compat.py`); their removal, planned
-  for v5.7, has not happened.
+  `deploy/status.sh` reports on one. The names from before the rename
+  (`SHOEBOX_*`, `deploy/shoebox.env`, the `shoebox_session` cookie, `shoebox.lan`)
+  are no longer accepted, since v6.4.5.
 - The reference deployment runs on Linux (`homeserver`) under `/opt/airlock`.
 - Anything that leaves the machine is the owner's to start: backups, publishing
-  and transfers. Each uses its own key — one per backup card, one per publish
-  server, with host keys pinned — never the host's own SSH keys. Publishing is
+  and transfers. Each uses a key of Airlock's own — one per backup type, one per
+  publish server, with host keys pinned — never the host's own SSH keys. Publishing is
   owner only, reads included; a backup card can be seen by anyone with the
   catalog, but only an owner creates, changes, runs or restores one (`auth.py`).
 - An album transfer code is single-use and SPAKE2-protected: safe to read out,
@@ -562,4 +569,4 @@ deleted from the source — only after the database commit. Duplicates go to
 | v6.1 | Basic photo editing; card bands; backups show progress | Photo editing |
 | v6.2 | Publishing a deployment to a server; build-stamped asset caching; overnight Match Faces | Publishing to a server, Frontend, Workflow engine |
 | v6.3 | Mass transfer; transfers register as `airlock.app`; backups drawn on the workflow diagram | Album transfers, Workflow engine |
-| v6.4 | License notice | License notice |
+| v6.4 | License notice; the pre-rename Shoebox names no longer accepted (v6.4.5) | License notice, Security |

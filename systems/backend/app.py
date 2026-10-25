@@ -1,6 +1,3 @@
-# First, before anything reads a setting: SHOEBOX_* variables still count
-# under their AIRLOCK_* names until v5.7. See env_compat.py.
-import env_compat  # noqa: F401,E402
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
@@ -66,9 +63,7 @@ app.secret_key = auth.load_secret_key()
 # itself and looks like a transport bug. An EMPTY value falls back to the
 # default rather than being read as "accept nothing", which would present as
 # exactly that same silent failure on every address at once.
-# shoebox.lan is the name before the rename (v5.6.4); its origins stay until v5.7.
 _DEFAULT_ORIGINS = ('https://airlock.lan,http://airlock.lan,'
-                    'https://shoebox.lan,http://shoebox.lan,'
                     'http://localhost:3000,http://localhost:5000')
 _ALLOWED_ORIGINS = [o.strip() for o in (
     os.environ.get('AIRLOCK_ALLOWED_ORIGINS', '').strip() or _DEFAULT_ORIGINS

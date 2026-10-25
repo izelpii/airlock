@@ -1,25 +1,45 @@
 # Renaming Shoebox to Airlock Photos
 
-**Status: phases 1–6 released in v5.6.0–v5.6.7 (2026-10-11); phase 7 scripted,
-not yet run; phase 8's fallback removal due in v5.7.** Written 2026-10-11.
+**Status: phases 1–6 released in v5.6.0–v5.6.7 (2026-10-11); phase 7 run on
+homeserver since; phase 8's fallback removal, due in v5.7, has not happened (still
+pending at v6.4.4).** Written 2026-10-11.
 Measured against `v5.5.3` and the live deployment on homeserver (`192.168.1.18`) the
 same day.
 
 | phase | release | state |
 |---|---|---|
 | 1 What people see | v5.6.0 | done |
-| 2 Internal identifiers | v5.6.1 | done |
-| 3 Environment variables | v5.6.2 (auth key), v5.6.3 | done, fallbacks in place |
+| 2 Internal identifiers | v5.6.1 | done; `deploy/shoebox-env.sh` shim removed before v5.6.9, `tools/shoebox-venv.sh` shim removed in v6.4.5 |
+| 3 Environment variables | v5.6.2 (auth key), v5.6.3 | done; fallbacks removed in v6.4.5 |
 | 4 Hostnames | v5.6.4 | done in code; on homeserver: `make-certs.sh --force`, hosts lines |
-| 5 Session cookie | v5.6.5 | done, fallback in place |
+| 5 Session cookie | v5.6.5 | done; fallback removed in v6.4.5 |
 | 6 Gateway container | v5.6.6 | done |
-| 7 homeserver's paths | v5.6.7 | `deploy/move-to-opt-airlock.sh`, to run by hand |
-| 8 Docs, repository, fallbacks out | v5.6.7 (docs) | living docs done; Gitea rename and fallback removal (v5.7) to do |
+| 7 homeserver's paths | v5.6.7 | done: homeserver runs from `/opt/airlock` |
+| 8 Docs, repository, fallbacks out | v5.6.7 (docs) | living docs done; Gitea repository renamed (`izelpi/airlock`); fallbacks removed in v6.4.5 |
 
-Kept on purpose, beyond what §3 lists: the magic-wormhole APPID and
-subprotocol (`shoebox.app/album-transfer`, `shoebox-album-transfer` - both ends
-of a transfer must agree), homeserver's `/etc/sysctl.d/99-shoebox-unprivileged-ports.conf`,
-and real paths on the Macs (`~/Personal/Development/shoebox`) in pod manifests.
+> **Completed in v6.4.5 (2026-10-25).** v5.7.0 shipped the Dashboard instead, so
+> the fallbacks planned to go "in v5.7" stayed until v6.4.5, which removed them
+> all: `SHOEBOX_*` settings are no longer copied to `AIRLOCK_*` (`env_compat.py`
+> is gone), `deploy/shoebox.env` is not read, a `shoebox_session` cookie no
+> longer signs in, the `shoebox.lan` CORS origins are out of the defaults, and
+> the `tools/shoebox-venv.sh` shim and `deploy/move-to-opt-airlock.sh` are
+> deleted. **Beyond the plan in §3.8,** the gateway's `shoebox.lan` redirects and
+> the `shoebox.lan` names on the certificate went too: old `shoebox.lan` links
+> no longer open. A CA still stored as `shoebox-ca.*` must be renamed to
+> `airlock-ca.*` - `make-certs.sh` stops and prints the command rather than make
+> a new CA; the certificate, and every device's trust in it, is unchanged.
+
+Kept on purpose, beyond what §3 lists: homeserver's
+`/etc/sysctl.d/99-shoebox-unprivileged-ports.conf`
+(`systems/gateway/enable-port-80.sh:28`), and real paths on the Macs
+(`~/Personal/Development/shoebox`) in pod manifests. The magic-wormhole APPID
+and subprotocol were kept as `shoebox.app/album-transfer` and
+`shoebox-album-transfer` through the rename, because both ends of a transfer
+must agree.
+
+> **Since v6.3.1:** they are `airlock.app/album-transfer` and
+> `airlock-album-transfer` (`systems/backend/wormhole_runner.py:47,70`), a clean
+> break: installs before and after v6.3.1 cannot exchange albums.
 
 The application is called **Shoebox** everywhere: on the login screen, in the
 version badge, in hostnames, environment variables, container and file names,
@@ -326,6 +346,11 @@ must look for both, or it will generate a new CA.
   `shoebox.lan` 301 redirect, the `shoebox.lan` SANs on the leaf, and the
   `/opt/shoebox` symlink. They cost nothing and protect old links.
 
+> **As of v6.4.5:** the repository is renamed (`git.example.lan:3000/izelpi/airlock`) and
+> the fallbacks are out. Unlike this plan, the 301 redirects and the
+> `shoebox.lan` names on the certificate were removed as well (see the status
+> note at the top).
+
 ### 3.9 The development machine
 
 Claude Code stores this project's memory under
@@ -336,6 +361,9 @@ that Shoebox runs on homeserver, that homeserver must stay on mains, and that de
 restart workflows. Copy the folder to
 `-Users-izelpi-Development-airlock/` when the directory moves, or don't move
 the directory.
+
+> **Since 2026-10:** the project folder is `~/Development/airlock`, and the
+> memory folder moved with it.
 
 ---
 
@@ -397,6 +425,7 @@ Phase 7, and once to remove the fallbacks.
 1. ~~The names~~: decided 2026-10-11. **Airlock Photos** is the product name,
    **`airlock`** the short internal name (§1).
 2. ~~Renaming `/media/usb1/shoebox-storage`~~: decided 2026-10-11, **no** (§3.7).
-3. Whether to rename the local project folder on the Macs (§3.9). Recommended:
-   only together with copying the memory folder.
+3. ~~Whether to rename the local project folder on the Macs~~: done for
+   `~/Development/airlock`, with the memory folder (§3.9). The pod manifests
+   still name `~/Personal/Development/shoebox`.
 4. ~~The licence wording~~: done in `v5.5.4` (§3.8).

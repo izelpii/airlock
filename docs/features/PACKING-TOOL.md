@@ -2,13 +2,13 @@
 
 `tools/pack_deployment.py` turns a published album deployment into a single
 `.tar.gz` that runs on any machine with Docker — a cloud VM, a NAS, a laptop —
-with no shoebox, no source checkout and no network path back home.
+with no Airlock, no source checkout and no network path back home.
 
 Specified in
 albums-enhancement-spec.md §4.5.
 
-The work is done by `systems/backend/deployment_pack.py`, which the Publish to
-server button will share
+The work is done by `systems/backend/deployment_pack.py`, which the **Publish to
+AWS** button on the deployment card shares
 (deployment-publish-to-server-spec.md);
 this script is its command line. With `--stage DIR` it writes the bundle as a
 folder instead of a tarball, media hard-linked from the catalog, and a later run
@@ -20,8 +20,8 @@ time, so `rsync` sends only what changed. That is the update path of
 
 ## Quick start
 
-Publish the deployment in the UI first (**Albums → Deployments → Publish**),
-then:
+Publish the deployment in the UI first (**Systems → Deployments**, the card's
+refresh button, "Rewrite the published folder from the database"), then:
 
 ```bash
 tools/pack_deployment.py \
@@ -35,6 +35,7 @@ tools/pack_deployment.py \
 ```
   deployment : Family Album  (family/album2026)
   albums     : 1  00009
+  sizes      : 1200, thumb320
   password   : yes
   published  : 42 minutes ago
 
@@ -163,6 +164,7 @@ hint why. The packer writes it with only the catalog being packed.
 | `--domain` | DNS name for the `Caddyfile`; without it the file carries a placeholder and a warning |
 | `--image` | gallery image to pull; without it `compose.yml` points at a placeholder |
 | `--out` | where to write the tarball (default `./dist`) |
+| `--stage DIR` | write the bundle as the folder `DIR/<deployment>` instead of a tarball, media hard-linked from the catalog (copied when `DIR` is on another disk); a later run refreshes it. `--target node` only |
 | `--max-age MINUTES` | fail if the deployment was published longer ago than this |
 | `--catalogs-root` | defaults to `./catalogs`, or `$CATALOGS_HOST_DIR` |
 | `--spa-dist` | gallery web build, for `--target static` |
@@ -203,10 +205,12 @@ bundle will not contain them.
 Three things beyond `docker compose up -d`:
 
 **DNS must already point at the machine.** Caddy proves domain ownership to
-Let's Encrypt over HTTP, so the name has to resolve before the first start.
+Let's Encrypt over the network, so the name has to resolve before the first start.
 
-**Ports 80 and 443 must both be open.** Not just 443 — the certificate challenge
-uses 80. On AWS that is a security-group rule.
+**Port 443 must be open.** Caddy can prove ownership over 443 alone; with port 80
+closed it logs a failed HTTP challenge first, then succeeds over 443
+([PUBLISH_TO_EC2.md §1.1](../guides/PUBLISH_TO_EC2.md#11-network-only-https-and-your-own-ssh)).
+On AWS that is a security-group rule.
 
 **Keep `.env`.** `ALBUM_SESSION_SECRET` signs the login cookie. Losing or
 changing it signs every viewer out. `compose.yml` uses `${ALBUM_SESSION_SECRET:?}`
@@ -225,14 +229,15 @@ which is one fewer thing to get wrong on a first deployment.
 
 A bundle is a **snapshot**. Nothing syncs.
 
-1. Change the album in shoebox
+1. Change the album in Airlock
 2. Publish the deployment
 3. Re-run the packer
 4. Copy the new tarball over and `docker compose up -d`
 
 At ~38 MB that is fine. If an album grows past the point where re-uploading is
-comfortable, `rsync -a` over the unpacked `catalogs/` tree is the incremental
-version and needs no change to the tool.
+comfortable, `--stage` keeps a folder that `rsync` updates file by file
+([PUBLISH_TO_EC2.md §7](../guides/PUBLISH_TO_EC2.md#7-updating-the-gallery)), and the
+**Publish to AWS** button does the same from Airlock.
 
 ---
 
@@ -243,7 +248,7 @@ version and needs no change to the tool.
 | Every image 404s, the bundle is a few KB | The tarball was made with `cp -r`/`tar` instead of this tool — the symlinks were copied, not the files |
 | 404 for everything, including `albums.json` | `catalogs/catalogs.json` is missing, or `--catalog` does not match the directory name |
 | The stack will not start | `ALBUM_SESSION_SECRET` is not set — create `.env` |
-| Caddy cannot get a certificate | DNS is not pointing here yet, or port 80 is closed |
+| Caddy cannot get a certificate | DNS is not pointing here yet, or port 443 is closed |
 | Viewers signed out on every restart | `ALBUM_SESSION_SECRET` is changing between starts |
 | Photos are missing from the bundle | The deployment was published before they were added — publish, then re-pack |
 | `error: dangling link or unreadable file` | A derivative referenced by the album is gone; re-publish the deployment |
@@ -253,7 +258,8 @@ version and needs no change to the tool.
 ## What it deliberately does not do
 
 - **Publish.** See *Freshness* above.
-- **Sync incrementally.** A bundle is a snapshot; `rsync` covers the rest.
+- **Sync incrementally.** A tarball is a snapshot; `--stage` prepares a folder, and
+  `rsync` (or the Publish to AWS button) does the sending.
 - **Ship originals.** A deployment carries the 1200px derivatives, video proxies
   and posters — never the source files. A 3.9 GB catalog produces a ~38 MB album.
 - **Reach back to the origin** for full-size images. That would trade away the

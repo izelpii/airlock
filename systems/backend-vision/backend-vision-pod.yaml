@@ -75,10 +75,10 @@ spec:
 
       volumeMounts:
         # Catalog data, mounted at the same path the main backend uses so the
-        # absolute image_path values it hands out resolve here too.
+        # absolute image_path values it hands out resolve here too. Read-write,
+        # as start-podman.sh mounts it: both launchers give the same access.
         - name: catalogs
           mountPath: /catalogs
-          readOnly: true
 
       securityContext:
         runAsNonRoot: true
@@ -93,5 +93,6 @@ spec:
     # Update this path when porting to a new machine.
     - name: catalogs
       hostPath:
-        path: /Users/izelpi/Personal/Development/shoebox/catalogs
+        # Relative to systems/backend-vision/: the repository's catalogs/.
+        path: ../../catalogs
         type: DirectoryOrCreate

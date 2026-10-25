@@ -8,7 +8,7 @@ Pack a published deployment into a tarball that runs anywhere.
 Produces  dist/<slug>-<YYYYMMDD>.tar.gz  containing the catalog subtree the
 gallery already expects, plus a compose file, a Caddyfile and a README whose
 commands are the ones to actually run. See
-documentation/specs/albums-enhancement-spec.md section 4.5.
+documentation/features/albums-enhancement-spec.md section 4.5.
 
 With --stage DIR it writes the bundle as the folder DIR/<deployment> instead,
 media hard-linked from the catalog, and refreshes it on later runs - only what
@@ -156,7 +156,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description='Pack a published album deployment into a portable tarball.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='See documentation/specs/albums-enhancement-spec.md section 4.5.')
+        epilog='See documentation/features/albums-enhancement-spec.md section 4.5.')
     ap.add_argument('--catalog', required=True, help='catalog slug, e.g. family')
     ap.add_argument('--deployment', required=True, help='deployment slug')
     ap.add_argument('--target', choices=('node', 'static'), default='node',

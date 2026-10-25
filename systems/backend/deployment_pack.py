@@ -498,9 +498,11 @@ certificate on the first request, which takes a few seconds.
 
 ## The two things that go wrong
 
-**Ports 80 and 443 must be reachable from the internet.** Caddy proves domain
-ownership over them. On AWS that means a security group allowing both, not just
-443.
+**Port 443 must be reachable from the internet.** Caddy obtains the certificate
+over 443 itself (the TLS-ALPN challenge), so port 80 can stay closed: on AWS, a
+security group allowing 443 is enough. Caddy may log an error about the "HTTP
+challenge" first; with port 80 closed that is expected, and it then succeeds
+over 443.
 
 **Keep `.env`.** Losing `ALBUM_SESSION_SECRET` signs everyone out; changing it
 does the same. It is not the album password{'' if locked else ' (this deployment has none)'}.

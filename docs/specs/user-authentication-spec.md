@@ -1,12 +1,28 @@
 # User Authentication and Catalog Ownership — Implementation Specification
 
-**Status:** specification — not implemented
+**Status:** implemented in v4.1.0 (2026-09-04, `systems/backend/auth.py`, `manage_users.py`,
+`migrate_add_users.py`, TLS in `systems/gateway/`); the sharing UI (`CatalogSharePanel.js`) is in
+v4.2.0. Phases 0-4 of §11 are done; phase 5 (albums) took the form of optional per-deployment
+passwords (§9 note); phase 6 (public domain) has not happened. Not built: per-catalog Socket.IO
+rooms (§6.4) and `started_by_user_id` (§6.5).
 **Supersedes:** the original brief of this file (preserved as `user-authentication-spec-orig.md`)
 **Related:**
 `documentation/features/SYSTEMS_CONTROL_PANEL_ANALYSIS.md`,
 `docs/specs/redesign-ports-routes-spec.md`,
 `documentation/specs/album-deployment-spec.md`,
 `documentation/features/CONTAINERIZATION_TRADEOFFS.md`
+
+> **What changed afterwards (as of v6.4.4, 2026-10-25):**
+> - **Names** (v5.6.x rename): the cookie is `airlock_session` (the old `shoebox_session` was
+>   accepted and swapped until v6.4.5, and no longer is), the settings are `AIRLOCK_SECRET_KEY` and
+>   `AIRLOCK_AUTH_REQUIRED` (default on, `app.py:136`), the domain is `airlock.lan`, the gateway
+>   config is `airlock.conf.template`. This spec keeps the names it was written with.
+> - **More owner-only operations** than §4.2 lists (`auth.py:555-586`): deployment passwords,
+>   purging removed files, publishing to a server (`/servers`, `/publish-runs`, reads included),
+>   and changing, running or restoring backups (viewers see backup cards).
+> - **Each account has its own page** (v5.13.0), `/users/<id>`, in place of §8.3's tabs; an
+>   administrator can set another account's password and see or sign out its devices
+>   (`app.py:17622-17790`).
 
 ---
 
@@ -165,6 +181,12 @@ refused, or the catalog becomes unadministrable.
 Workflows are `editor` because they mutate catalog data. `viewer` is what a shared family member
 gets.
 
+> **As implemented** (`systems/backend/auth.py:555-586`): the role is derived from the URL rule and
+> method, not from a decorator per route. `owner` is needed for `/access`, a deployment's
+> `/password`, `/removed-files/purge`, `/servers` and `/publish-runs` (all methods), for any
+> non-read on `/backups`, and for `PUT`/`DELETE` on the catalog itself. Other reads are `viewer`,
+> other writes `editor`.
+
 ### 4.3 `sessions`
 
 ```sql
@@ -255,7 +277,8 @@ across restarts or every session is invalidated on each deploy — which, given 
 image is rebuilt, would be indistinguishable from a broken login.
 
 Resolution order: `SHOEBOX_SECRET_KEY` from the environment; otherwise a key generated once and
-stored at `database/secret_key` with mode `0600`. That directory is already a persistent volume
+stored at `database/secret_key` with mode `0600`.
+*(Since v5.6.3 the variable is `AIRLOCK_SECRET_KEY`, `auth.py:76`.)* That directory is already a persistent volume
 (`VOLUME ["/app/database"]`), so the key survives image rebuilds — the same property that makes
 `catalogs.db` survive them.
 
@@ -267,6 +290,9 @@ The key is used for CSRF tokens and cookie signing. It must never be baked into 
 ```
 Set-Cookie: shoebox_session=<id>; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000
 ```
+
+> **Since v5.6.5** the cookie is `airlock_session` (`systems/backend/auth.py`). The old
+> `shoebox_session` was accepted and swapped for the new name until v6.4.5; it no longer signs in.
 
 - `HttpOnly` — not readable by JavaScript, so an XSS bug cannot exfiltrate the session.
 - `SameSite=Lax` — blocks cross-site POSTs, which is the practical CSRF defence here.
@@ -285,6 +311,11 @@ CORS(app, supports_credentials=True, origins=[
 
 The dev-server origin matters: `npm start` runs the UI on `:3000` against the backend on `:5000`,
 which is cross-origin, and axios needs `withCredentials: true` for the cookie to travel.
+
+> **As implemented:** the list is `AIRLOCK_ALLOWED_ORIGINS` (default `https://airlock.lan`, the old
+> `shoebox.lan` origins, `localhost:3000` and `:5000`), and a request whose `Origin` matches the
+> host it arrived on is accepted too; Socket.IO uses the same check
+> (`systems/backend/app.py:69-118`).
 
 ### 5.5 Brute force
 
@@ -367,12 +398,19 @@ to everyone connected. With multiple users this leaks activity across accounts.
 - Emit progress into a per-catalog room (`catalog:<id>`) and join a socket only to rooms its user may
   read, replacing today's global broadcast.
 
+> **As of v6.4.4:** the handshake is authenticated (`app.py:18202-18222`) and origins are
+> restricted, but per-catalog rooms were **not** built: `workflow_progress` is still emitted to
+> every signed-in connection.
+
 ### 6.5 Workflow subprocesses
 
 Workflows run detached via `subprocess.Popen` and write to the catalog database directly; they do not
 call the API, so they need no credentials. Record provenance instead: add `started_by_user_id` to the
 workflow execution row so the UI can show who ran what. A scheduled workflow with no interactive user
 records `NULL` and runs as the system.
+
+> **Not built as of v6.4.4:** workflow executions have no `started_by_user_id`. Only publish runs
+> record who started them (`systems/backend/publish.py:94`).
 
 ---
 
@@ -402,6 +440,12 @@ an authenticated user to a login page they have already passed is a confusing lo
 
 **First-run.** `/api/auth/setup` must hard-refuse once any user row exists, checked inside the same
 transaction that inserts, so it cannot be raced into creating a second admin.
+
+> **Added since:** `GET /api/auth/sessions`; and, for v5.13.0's account pages,
+> `/api/users/<id>/profile` (GET, PUT), `/api/users/<id>/password` (POST: an administrator sets a
+> temporary password, which signs that account out everywhere), `/api/users/<id>/sessions` (GET,
+> DELETE), `/api/users/<id>/person` and `/api/users/<id>/avatar` (`systems/backend/app.py:17378,
+> 17622-17790, 18084, 18113`).
 
 ---
 
@@ -437,6 +481,12 @@ login when `must_change_password` is set.
 - **Sessions** — active sessions with user agent, IP and last seen; "sign out everywhere".
 - **Sharing** — for each catalog the user owns, who has access and at what role; grant and revoke.
 - **Users** — admin only: create, deactivate, promote.
+
+> **Since v5.13.0** there are no tabs: each account has its own page, `/users/<id>` (User
+> Settings, Linked person, Password, Signed-in devices), opened from your name in the top bar or
+> from the pencil on a card in Admin → Users; the Administrator and Active switches stay on the
+> card. Sharing a catalog is on the Catalogs page (`CatalogSharePanel.js` in `CatalogList.js`). The
+> gear is Site settings, `/settings` (`systems/frontend/src/App.js:169-177`).
 
 ### 8.4 Interceptors
 
@@ -477,6 +527,12 @@ Options, to be settled before or alongside implementation:
    option.
 
 Recommended: (2) for shared albums, with (1) documented as the current state until then.
+
+> **As of v6.4.4:** a deployment can carry a password, set by an owner only and checked by the
+> gallery with its own session (`systems/album-gallery/server.mjs:25,393-460`); a deployment
+> without one is public to anyone who reaches the gateway. Published albums are served at
+> `https://<catalog>.airlock.lan/<album>`, and since v6.2.0 an owner can also publish a deployment
+> to a server outside the LAN (`deployment-publish-to-server-spec.md`).
 
 ---
 
@@ -546,6 +602,11 @@ no warning. The CA private key is the sensitive artifact: `0600`, never in the i
 
 **Certificates are not committed to the repository.** They are environment state, like `catalogs.db`.
 
+> **Since v6.4.5** the leaf covers `airlock.lan` and `*.airlock.lan` (no longer `shoebox.lan`), and
+> the CA's files are `airlock-ca.*`. A CA still stored under its pre-rename name `shoebox-ca.*` is
+> renamed, not replaced: `make-certs.sh` stops and prints the command
+> (`systems/gateway/make-certs.sh`).
+
 ### 10.4 nginx changes
 
 `shoebox.conf.template` gains a redirect server and TLS on the browser-facing block:
@@ -576,6 +637,7 @@ server {
 
 `SERVER_DOMAIN` joins `UPSTREAM_HOST` in `NGINX_ENVSUBST_FILTER`, so the public domain is one
 environment variable at container start rather than an image rebuild. Default `shoebox.lan`.
+*(Default `airlock.lan` since v5.6.4, `systems/gateway/start-podman.sh:33`.)*
 
 The internal service-name blocks (`backend.`, `vision.`, `geoloc.`, …) stay on plain `listen 80` per
 §10.1.

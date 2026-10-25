@@ -25,7 +25,7 @@
 
 set -uo pipefail
 
-SYSCTL_FILE=/etc/sysctl.d/99-shoebox-unprivileged-ports.conf
+SYSCTL_FILE=/etc/sysctl.d/99-airlock-unprivileged-ports.conf
 SETTING='net.ipv4.ip_unprivileged_port_start=80'
 
 current() { podman machine ssh 'cat /proc/sys/net/ipv4/ip_unprivileged_port_start' 2>/dev/null | tr -d '\r'; }

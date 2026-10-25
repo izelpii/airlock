@@ -1,8 +1,8 @@
 # BorgBackup on the backup host
 
-BorgBackup is the second backup type planned for the Backup tab
-(`documentation/specs/backup-backrest-spec.md` §11), after restic. Like restic, Airlock
-will run borg itself, in the backend. Unlike restic over SFTP, borg needs **`borg` on the
+BorgBackup is the second backup type on the Backup tab (v5.10;
+`documentation/specs/backup-backrest-spec.md` §11), after restic. Like restic, Airlock
+runs borg itself, in the backend (borg 1.4.5 is in the backend image). Unlike restic over SFTP, borg needs **`borg` on the
 backup host too**: the client connects over SSH and runs `borg serve` there, and
 `borg serve` reads and writes the repository on that machine's disk.
 
@@ -43,7 +43,8 @@ command="/opt/borg/bin/borg serve --restrict-to-path /media/usb1/borg",restrict 
 ```
 
 A key line has one forced command, so the borg key is **not** the key restic uses (that
-one is pinned to `sftp-server`): each Airlock will have a second key, for borg.
+one is pinned to `sftp-server`): each Airlock has a second key, for borg
+(`database/backup-ssh/id_ed25519_borg`), whose line the BorgBackup card's form shows.
 `--append-only` can be added later to stop a client from deleting archives; pruning
 would then be done on backup-host itself.
 

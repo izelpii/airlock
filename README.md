@@ -34,6 +34,7 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
 ### Accounts
 - **Sign-in over HTTPS** — Every page and API call needs a session; the first run creates the owner account
 - **Users and roles** — Viewer, editor and owner, granted per catalog; managed on the Users page or with `systems/backend/manage_users.py`
+- **Account pages** — Each account has its own page (profile, linked person, password, signed-in devices), opened from your name in the top bar or from Users
 
 ### Catalogs, Import and Storage
 - **Multi-catalog support** — Each catalog has its own folder and SQLite database, with paths stored relative to it so it can be moved
@@ -43,6 +44,7 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
 - **Dates** — Every item has one decided date (`master_datetime`); dates can be corrected across a whole event at once
 - **Removing files** — Items can leave a catalog, with a Removed Files report
 - **Storage alerts** — Drives are watched, and an import stops before a disk fills
+- **Backups** — Each catalog's database and files to another machine on a schedule, with restic, borg or rsync over SSH, run by the backend itself; back up now, verify and restore from the catalog's Backup tab
 
 ### People, Pets and Faces
 - **Face pipeline** — Find (YuNet), measure (VGG-Face or SFace, chosen per catalog), match, and re-rank by context (events, time, who appears with whom)
@@ -51,21 +53,27 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
 - **Pets** — Optional per catalog: animals are detected, grouped and named like people, without ever mixing with faces
 
 ### Organisation & Discovery
+- **Dashboard** — The open catalog at a glance: totals, the last twelve months, the library over time, what needs attention, recent activity, coverage of the automatic work, on this day, storage and backups
+- **Search and saved searches** — One box and filters (names, dates, people and pets, places, events, albums, camera, SHA-256 …) over every file, including copies an import turned away as duplicates; keep a search and the files chosen from it as a saved search
+- **Calendar view** — The catalog as a heatmap with a square per day; a click opens that day's events
+- **Basic photo editing** — Turn or flip a photo; the original is never written to, and its derivatives, face and pet boxes follow the edit
 - **Events** — Photos grouped by time gaps
 - **Locations** — Coordinates clustered into places to confirm or reject, place names from OpenStreetMap, one map per catalog; photos without GPS inherit their event's place
 - **AI descriptions** — Natural-language descriptions of a photo from a local Ollama vision model
 - **Tags and content reports** — Label photos, and browse what a catalog holds
 
 ### Albums & Sharing
-- **Albums** — Curate photos into albums, organised as a tree of categories, or describe one in words and let a local model select the photos
+- **Albums** — Curate photos into albums with tools, organised as a tree of categories (albums made earlier by describing them in words still open in their own editor)
 - **Transfers** — Send an album to another installation with magic-wormhole
 - **Mass transfer** — Send one album to several people at once, each with their own code and an optional label; unused codes expire together after up to 3 days, and new ones are one click
 - **Deployments** — Publish one or more albums as a shareable gallery, optionally password-protected, with no container to build or restart
+- **Publishing to a server** — **Publish to AWS** on a deployment card puts it on a server of your own (an EC2 instance, say) over SSH and keeps it updated: preview, then publish only what changed
 - **Video in albums** — Deployed albums play videos: the tile previews on hover, the click opens the browser-friendly version
 - **Packing** — Export a deployment as a single tarball that runs anywhere Docker does, with TLS, using [`tools/pack_deployment.py`](tools/pack_deployment.py)
 
 ### Running Workflows
 - **Queued and chained** — Workflows queue per catalog, run two at a time when their writes don't overlap, and trigger the next step when they finish
+- **Overnight learning** — Tagging a face queues the long Match Faces by Appearance for 3:00 at night; Run on the Workflows page still starts it at once
 - **Stoppable** — Each run is its own process and can be stopped, paused or resumed
 - **Live progress and history** — Socket.IO pushes progress; every run is recorded with timing, counts and status
 
@@ -93,6 +101,11 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
               faces    animals  video    places        └──► Ollama (host)
 ```
 
+The backend also reaches outside the machine, always on the owner's say-so:
+to another machine for catalog backups (restic, borg or rsync over SSH), to a
+server of the owner's to publish a gallery (rsync over SSH), and to the public
+magic-wormhole relays to send an album to another Airlock.
+
 See [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) for the full system architecture, and [`docs/architecture/INFORMATION_FLOW.md`](docs/architecture/INFORMATION_FLOW.md) for data flow diagrams.
 
 ---
@@ -119,8 +132,7 @@ config is the only place that maps a name to a port.
 | Gateway health | http://airlock.lan/gateway-health | 80 |
 
 The plain-HTTP service names are for container-to-container calls; browsers use
-`https://airlock.lan`. Old `shoebox.lan` links redirect permanently to the same
-path on `airlock.lan`.
+`https://airlock.lan`.
 
 The names need `/etc/hosts` entries, and devices need to trust the gateway's
 private CA once:
@@ -268,7 +280,7 @@ natively (see below) keep their pid files there too.
 
 **Restarting interrupts workflows, and ends waiting transfer codes.**
 `start-all.sh` replaces every container, including the backend that runs
-workflows and album transfers. Check the Operations page first, and Albums ▸
+workflows and album transfers. Check the Workflows page first, and Albums ▸
 Transfers for codes still waiting for someone - after a restart those need new
 codes. Or restart only the service you changed (next section).
 
@@ -311,8 +323,7 @@ airlock/
 │   ├── deploy.sh                 ← Prepare a host; --check reports only
 │   ├── airlock-env.sh            ← Shared settings and service-mode logic
 │   ├── airlock.env.example       ← Template for deploy/airlock.env (host paths, modes)
-│   ├── status.sh                 ← Health, storage and import report
-│   └── move-to-opt-airlock.sh    ← Move an install from /opt/shoebox to /opt/airlock
+│   └── status.sh                 ← Health, storage and import report
 │
 ├── systems/                      ← One directory per service, each with start-podman.sh
 │   ├── gateway/                  ← nginx: airlock.conf.template, make-certs.sh, make-hosts.sh
@@ -323,8 +334,13 @@ airlock/
 │   │   ├── catalog.py, catalog_layout.py, storage_routes.py
 │   │   ├── embedding_models.py   ← Face model registry and thresholds
 │   │   ├── workflow_scheduler.py, workflow_triggers.py
+│   │   ├── dashboard.py, calendar_counts.py, search.py, saved_searches.py, photo_edits.py
+│   │   ├── backups.py, backup_*.py ← Catalog backups (restic, borg, rsync)
+│   │   ├── publish.py, deployment_pack.py ← Publishing a deployment to a server
+│   │   ├── wormhole_transfer.py, wormhole_runner.py ← Album transfers
+│   │   ├── airlock_license.py    ← License notice
 │   │   ├── migrate_*.py          ← Database migrations, run explicitly
-│   │   ├── database/             ← catalogs.db, secret_key, instance_id
+│   │   ├── database/             ← catalogs.db, secret_key, instance_id, backup-ssh/, publish-ssh/
 │   │   └── workflows/            ← Workflow scripts (bind-mounted), lib/, defaults.json
 │   ├── backend-deepface/         ← Face detection and embeddings (+ start-host.sh)
 │   ├── backend-pets/             ← Animal detection and identity
@@ -337,6 +353,7 @@ airlock/
 │
 ├── catalogs/                     ← One folder per catalog (workflow_results.db, originals, cache/)
 ├── IN/                           ← Default import drop folder
+├── license/                      ← This copy's signed *.license file, if any (see license/README.md)
 ├── tools/                        ← Operator scripts: pack_deployment.py,
 │                                   migrate_embedding_model.py, fetch_*_weights.sh, …
 ├── docs/                         ← architecture/, guides/, features/, specs/, images/
@@ -374,25 +391,35 @@ The scripts are bind-mounted: editing one needs no image rebuild.
 | Measure and Match Pets | `pe_identify_pets.py` | Pet embeddings and matches (pets on only) |
 | Group Unnamed Pets | `pe_cluster_pets.py` | Groups animals nobody has named yet (pets on only) |
 
+Tagging a face queues Match Faces by Appearance for the next 3:00
+(`NIGHTLY_LEARNING_AT`, `NIGHTLY_LEARNING_TZ`) rather than straight away; Run on
+the Workflows page, or an import finishing, still starts it at once. Catalog
+backups are not workflows: they run on their own schedule, never through the
+queue, and the Workflows page draws them in a **Backups** row of their own under
+the pipeline.
+
 ---
 
 ## Key UI Features
 
-- **Photos / Videos** — Browse by day with a date slider; the server sends one page around what is on screen.
-- **Identify people / Identify groups** — Suggested matches per person, or clusters of unnamed faces, to confirm or reject in bulk.
+- **Dashboard** — The home page (`/`): the open catalog at a glance, every number linking to the page that explains it.
+- **Photos / Videos** — Browse by day with a date slider; the server sends one page around what is on screen. A photo's **Basic Editor** card turns or flips it.
+- **Search / Saved searches** — Its own menu group: one box and filters, one list of results; a search box in the top bar opens it from anywhere.
+- **Identify people / Identify groups** — Suggested matches per person, or clusters of unnamed faces, to confirm or reject in bulk. **Identify pets** does the same for groups of unnamed animals.
 - **People / Pets** — Directories with categories, profile pictures and every photo of each.
 - **Events** — Time-based groups; dates can be corrected for a whole event at once.
 - **Locations** — Proposed places to confirm, a gallery per place, and a catalog map.
-- **Albums** — Album trees, prompt-built albums, deployments and transfers.
-- **Operations** — Workflow cards, queue, chains, and execution history; **Import Progress** shows an import phase by phase.
-- **Catalogs, Storage, Alerts** — Catalog settings (ingest mode, pets, face model), storage routes, drive alerts.
-- **Users** — Accounts and per-catalog roles.
+- **Views** — **Map view** and **Calendar view** (a heatmap of the catalog by day).
+- **Albums** — Album trees made with tools, deployments (with **Publish to AWS**), and transfers: **Transfer** to one person or **Mass transfer** to several.
+- **Workflows** — Workflow cards, queue, chains and the pipeline diagram, with the catalog's backups in a row of their own; **Workflow Executions** is the history and **Import progress** shows an import phase by phase.
+- **Catalogs, Alerts** — The open catalog's settings (ingest mode, pets, face model), with **Storage routes** and **Backup** tabs; drive alerts. The **Catalog report** checks the catalog against its files.
+- **Users** — Accounts and per-catalog roles; each account has its own page.
 
 ---
 
 ## API Overview
 
-The backend serves about 220 routes under `/api/`, reached at
+The backend serves about 270 routes under `/api/`, reached at
 `https://airlock.lan/api/…`. Every route needs a signed-in session except
 `/api/auth/login`, `/api/auth/session`, `/api/auth/setup` and
 `/api/auth/setup-required`.
@@ -401,11 +428,16 @@ The backend serves about 220 routes under `/api/`, reached at
 |---|---|
 | Auth and users | `/api/auth/*` (login, logout, password, sessions, setup), `/api/users/*` |
 | Catalogs | `/api/catalogs`, `/api/catalogs/<id>` and its `access`, `storage-routes`, `embedding-model` |
+| Dashboard and reports | `…/dashboard`, `…/calendar`, `…/content-report`, `…/content-by-time`, `…/verify` |
+| Search | `…/search`, `…/saved-searches` |
+| Photo editing | `…/files/<file>/edits`, `…/edits/versions` |
 | Files and media | `…/photos`, `…/videos`, `…/files`, `…/images`, `…/removed-files`, `…/imports` |
 | Faces and people | `…/faces`, `…/people`, `…/people-categories`, `/api/people/*` |
 | Pets | `…/pets`, `…/pet-detections` |
 | Events and locations | `…/events`, `…/locations`, `…/location-clusters`, `…/geocode` |
-| Albums | `…/albums`, `…/album-templates`, `…/deployments`, `…/transfers`, `…/mass-transfer`, `…/transfer-batches` |
+| Albums | `…/albums`, `…/album-templates`, `…/deployments`, `…/transfers`, `…/albums/<album>/mass-transfer`, `…/transfer-batches` |
+| Publishing to a server | `…/deployments/<deployment>/servers` (preview, publish, setup), `…/deployments/<deployment>/publish-runs` |
+| Backups | `…/backups` (test, run, verify, cancel, snapshots, restore) |
 | Workflows | `…/workflows`, `…/queue` (run, chain, stop, pause, resume), `…/executions`, `…/workflow-graph`, `/api/workflows/*` |
 | System | `/api/version`, `/api/alerts`, `/api/storage-routes`, `/api/systems`, `/api/user/settings` |
 
@@ -417,7 +449,7 @@ The backend serves about 220 routes under `/api/`, reached at
 
 All SQLite in WAL mode, in two kinds of database:
 
-- **`systems/backend/database/catalogs.db`** — the application: `catalog_meta`, `storage_routes`, `users`, `sessions`, `catalog_access`, `alerts`, `user_settings`, `scheduler_lease`.
+- **`systems/backend/database/catalogs.db`** — the application: `catalog_meta`, `storage_routes`, `users`, `sessions`, `catalog_access`, `alerts`, `user_settings`, `scheduler_lease`, and the backup cards and their runs, `backup_targets` and `backup_runs`.
 - **`catalogs/<catalog>/workflow_results.db`** — one per catalog, everything about its files:
 
 | Tables | Holds |
@@ -426,13 +458,17 @@ All SQLite in WAL mode, in two kinds of database:
 | `alternative_versions` | Image rungs, video proxies and posters |
 | `face_detections`, `ai_face_contents`, `face_contents` | Faces, crops and embeddings (with the model that made them) |
 | `face_similarity_scores`, `face_best_match` | Match scores, and each face's best match kept current by triggers |
-| `pet_detections`, `pet_*` | Pets — created only when pets are turned on |
+| `pet_detections`, `pet_*` | Pets — empty unless pets are turned on |
 | `people` | People and pets (`kind`), with categories |
 | `events`, `event_files` | Events |
 | `locations`, `location_clusters`, `file_locations` | Places and how each photo got its place |
-| `albums`, `album_*`, `album_deployments`, `wormhole_transfers`, `wormhole_transfer_batches` | Albums, publishing and transfers |
+| `albums`, `album_*`, `album_deployments`, `wormhole_transfers`, `wormhole_transfer_files`, `wormhole_transfer_batches` | Albums, publishing and transfers |
+| `deployment_servers`, `deployment_publish_runs` | Publishing a deployment to a server |
+| `saved_searches`, `saved_search_files`, `search_names`, `search_state` | Saved searches, and the name index search uses |
+| `photo_edits`, `photo_edit_history` | Photo edits (the original is never written) |
+| `file_operations` | What each import did with a file, including duplicates it turned away |
 | `workflows`, `workflow_queue`, `workflow_executions`, `import_phases` | Workflows and their runs |
-| `catalog_properties` | Per-catalog settings (`pets_enabled`, `embedding_model`, …) |
+| `catalog_properties` | Per-catalog settings (`pets_enabled`, `embedding_model`, …) and the Dashboard's and calendar's cached counts |
 | `tags` | Photo tags |
 
 Paths inside a catalog database are relative to the catalog. Schema changes
@@ -447,8 +483,9 @@ with the backend stopped. See
 Per-machine settings live in **`deploy/airlock.env`** (copy
 `deploy/airlock.env.example`; `deploy/deploy.sh` writes one): host folders for
 catalogs, imports and storage, the LAN address, service modes, and import and
-deepface tuning. Settings are `AIRLOCK_*`; the old `SHOEBOX_*` names and
-`deploy/shoebox.env` are still read until v5.7.
+deepface tuning. Settings are `AIRLOCK_*`. The names from before the rename to
+Airlock are no longer read (since v6.4.5): an install still using them must
+rename them in `deploy/airlock.env`.
 
 | Setting | Effect |
 |---|---|
@@ -456,9 +493,10 @@ deepface tuning. Settings are `AIRLOCK_*`; the old `SHOEBOX_*` names and
 | `AIRLOCK_DEEPFACE_MODE`, `AIRLOCK_TRANSCODE_MODE` | `auto`, `host`, `container`, `gpu` or `off` |
 | `AIRLOCK_ALLOWED_ORIGINS` | Extra origins the backend accepts |
 | `OLLAMA_MODEL`, `ALBUMS_LLM_MODEL` | Models for descriptions and album prompts |
+| `NIGHTLY_LEARNING_AT`, `NIGHTLY_LEARNING_TZ` | When a face tag's Match Faces by Appearance runs (default `03:00`, `America/New_York`) |
 
 Per catalog, on the Catalogs page: ingest mode (copy, reference, move), pets on
-or off, and the face model (VGG-Face or SFace; switch an existing catalog with
+or off (on for a new catalog), and the face model (VGG-Face or SFace; switch an existing catalog with
 `tools/migrate_embedding_model.py`). Face-match thresholds are set per model in
 `systems/backend/embedding_models.py`.
 
@@ -466,7 +504,8 @@ or off, and the face model (VGG-Face or SFace; switch an existing catalog with
 licensed to. Put it in the **`license/`** folder at the top of the repository
 (the backend sees it at `/license`; see `license/README.md`); it is read again
 when it changes, so no restart.
-The version badge's tooltip then says *Licensed to …*; without a valid license
+The version badge's tooltip then says *Licensed to …*, and the left panel ends
+with *Licensed to: …*; without a valid license
 a red **Unlicensed - No commercial use** appears beside the logo, and the tooltip
 says why (*Unlicensed copy* or *License not valid*). It is a good-faith notice: nothing is ever disabled, with or
 without a license. Licenses are issued by the maintainer and checked against the
@@ -481,7 +520,7 @@ machine with Docker — a cloud VM, a NAS, a friend's laptop — with no airlock
 no path back to this installation.
 
 ```bash
-# 1. Publish the deployment in the UI (Albums -> Deployments -> Publish)
+# 1. Publish the deployment in the UI (Systems -> Deployments; the card's refresh button republishes it)
 # 2. Pack it
 tools/pack_deployment.py \
     --catalog family --deployment album2026 \
@@ -510,6 +549,12 @@ deployment carries the 1200px derivatives and video proxies, never the originals
 
 See [PACKING-TOOL.md](docs/features/PACKING-TOOL.md) for the options,
 the static-host target, and troubleshooting.
+
+To keep a deployment on a server of your own and update it from Airlock, use
+**Publish to AWS** on the deployment card instead: it packs the same bundle,
+previews what would change, sends only that over SSH, and restarts the gallery
+only when its configuration changed. See
+[PUBLISH_TO_EC2.md](docs/guides/PUBLISH_TO_EC2.md).
 
 ---
 
@@ -586,8 +631,10 @@ Full documentation is in the [`docs/`](docs) directory:
 | [User Authentication](docs/specs/user-authentication-spec.md) | Accounts, roles, sessions |
 | [Ingestion Architecture](docs/features/ingestion-architecture.md) | How the streaming import works |
 | [Pet Recognition](docs/specs/pet-recognition-spec.md) | Pets: models, thresholds, design |
-| [Name Migration](docs/specs/name-migration-spec.md) | The Shoebox → Airlock Photos rename and what remains |
+| [Name Migration](docs/specs/name-migration-spec.md) | The Shoebox → Airlock Photos rename, and how its fallbacks were retired |
 | [Packing Tool](docs/features/PACKING-TOOL.md) | Exporting a deployed album to run anywhere |
+| [Publish to EC2](docs/guides/PUBLISH_TO_EC2.md) | Putting a deployment on your own server and keeping it updated |
+| [Backups](docs/features/backups.md) | Backing up a catalog with restic, borg or rsync |
 | [Album Deployments](docs/features/albums-enhancement-spec.md) | Deployments, publishing, packing — design and rationale |
 
 ---

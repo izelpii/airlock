@@ -5,9 +5,9 @@
 #
 # ${UPSTREAM_HOST} is substituted at container start (nginx's envsubst
 # templating, restricted to that one name by NGINX_ENVSUBST_FILTER so nginx's
-# own $host / $remote_addr variables are left alone). It is
-# host.containers.internal in a pod and localhost when the gateway is run
-# directly on the host.
+# own $host / $remote_addr variables are left alone). It is airlock-host, a
+# name start-podman.sh adds with --add-host so it has exactly one address, or
+# localhost when the gateway is run directly on the host.
 #
 # This file is the ONLY place in the system that still knows a port number.
 # That is the point of the migration: the ports still exist, but nothing in the
@@ -277,49 +277,13 @@ server {
     }
 }
 
-# ── Old names: shoebox.lan, before the rename to airlock (v5.6.4) ─────────────
-# Every link anybody kept or shared still works: the old name answers with a
-# permanent redirect to the same path on the new one. No end date - it costs
-# these two blocks, and an album link sent to family is the kind of thing that
-# is opened years later. documentation/specs/name-migration-spec.md, phase 4.
-#
-# Exact names are matched before regular expressions, so the bare old domain
-# needs its own block; the catalog subdomains are one expression. The internal
-# service names (backend.shoebox.lan, ...) are listed on their own blocks below
-# and are matched first, by exact name, so they never reach this redirect.
-# The leaf certificate keeps *.shoebox.lan among its SANs for these.
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name shoebox.lan;
-
-    ssl_certificate     /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-
-    return 301 https://${SERVER_DOMAIN}$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    http2 on;
-    # Quoted for the same reason as the catalog blocks above.
-    server_name "~^(?<old_catalog>[a-z0-9][a-z0-9-]{1,38}[a-z0-9])\.shoebox\.lan$";
-
-    ssl_certificate     /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-
-    return 301 https://$old_catalog.airlock.lan$request_uri;
-}
-
 # ── Service names ─────────────────────────────────────────────────────────────
 # For service-to-service calls, curl, and reaching one backend directly. These
 # are never compiled into the frontend bundle.
 
 server {
     listen 80;
-    server_name backend.airlock.lan backend.shoebox.lan;
+    server_name backend.airlock.lan;
     location /socket.io/ {
         proxy_pass http://airlock_backend;
         include /etc/nginx/proxy.conf;
@@ -335,37 +299,37 @@ server {
 # passthrough into podman's Linux VM. ${UPSTREAM_HOST} reaches it either way.
 server {
     listen 80;
-    server_name deepface.airlock.lan deepface.shoebox.lan;
+    server_name deepface.airlock.lan;
     location / { proxy_pass http://airlock_deepface; include /etc/nginx/proxy.conf; }
 }
 
 server {
     listen 80;
-    server_name vision.airlock.lan vision.shoebox.lan;
+    server_name vision.airlock.lan;
     location / { proxy_pass http://airlock_vision; include /etc/nginx/proxy.conf; }
 }
 
 server {
     listen 80;
-    server_name geoloc.airlock.lan geoloc.shoebox.lan;
+    server_name geoloc.airlock.lan;
     location / { proxy_pass http://airlock_geoloc; include /etc/nginx/proxy.conf; }
 }
 
 server {
     listen 80;
-    server_name pets.airlock.lan pets.shoebox.lan;
+    server_name pets.airlock.lan;
     location / { proxy_pass http://airlock_pets; include /etc/nginx/proxy.conf; }
 }
 
 server {
     listen 80;
-    server_name albums.airlock.lan albums.shoebox.lan;
+    server_name albums.airlock.lan;
     location / { proxy_pass http://airlock_albums; include /etc/nginx/proxy.conf; }
 }
 
 server {
     listen 80;
-    server_name gallery.airlock.lan gallery.shoebox.lan;
+    server_name gallery.airlock.lan;
     location / { proxy_pass http://airlock_gallery; include /etc/nginx/proxy.conf; }
 }
 
@@ -373,7 +337,7 @@ server {
 # backend-albums stop hardcoding host.containers.internal:11434.
 server {
     listen 80;
-    server_name ollama.airlock.lan ollama.shoebox.lan;
+    server_name ollama.airlock.lan;
     location / {
         proxy_pass http://airlock_ollama;
         include /etc/nginx/proxy.conf;

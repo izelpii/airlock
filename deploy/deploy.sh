@@ -133,10 +133,6 @@ echo "── Configuration ─────────────────�
 ENV_FILE="$AIRLOCK_ROOT/deploy/airlock.env"
 if [[ -f "$ENV_FILE" ]]; then
   ok "deploy/airlock.env present"
-elif [[ -f "$AIRLOCK_ROOT/deploy/shoebox.env" ]]; then
-  # Its name before v5.6.3, still read by airlock-env.sh. Not copied: two files
-  # saying the same thing is how one of them goes stale.
-  ok "deploy/shoebox.env present (still read; rename it to deploy/airlock.env)"
 else
   if [[ -n "$CHECK_ONLY" ]]; then
     warn "deploy/airlock.env missing - defaults would be used"
@@ -197,7 +193,7 @@ elif [[ -x "$AIRLOCK_ROOT/systems/gateway/make-certs.sh" ]]; then
   if ( cd "$AIRLOCK_ROOT/systems/gateway" && ./make-certs.sh \
         > "$AIRLOCK_ROOT/logs/make-certs.log" 2>&1 ); then
     ok "generated a certificate for the .lan names and this machine's IPs"
-    warn "  Install THIS MACHINE'S systems/gateway/certs/shoebox-ca.pem on each"
+    warn "  Install THIS MACHINE'S systems/gateway/certs/airlock-ca.pem on each"
     warn "  device that will use it, or browsers will warn. Every deployment has"
     warn "  its own CA, named after the machine; a device that uses two"
     warn "  deployments needs both roots installed."

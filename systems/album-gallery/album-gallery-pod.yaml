@@ -78,5 +78,6 @@ spec:
     # To move to a new machine, update this hostPath.
     - name: catalogs
       hostPath:
-        path: /Users/izelpi/Personal/Development/shoebox/catalogs
+        # Relative to systems/album-gallery/: the repository's catalogs/.
+        path: ../../catalogs
         type: DirectoryOrCreate

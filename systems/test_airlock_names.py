@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-The rename to airlock: old setting names still work, and nothing new uses them.
+The rename to airlock is finished: nothing reads the old names any more.
 
     python -m pytest systems/test_airlock_names.py
 
 Settings were SHOEBOX_* until v5.6.3 and are AIRLOCK_* now
-(documentation/specs/name-migration-spec.md, phase 3). Two things must hold
-until the fallbacks are removed in v5.7: a machine whose env file still says
-SHOEBOX_ keeps its settings - a missed one silently takes its default - and no
-code goes back to the old prefix.
+(documentation/specs/name-migration-spec.md). The fallbacks that kept the old
+names working - env_compat.py, deploy/shoebox.env, SHOEBOX_* exported by hand -
+were removed in v6.4.5. These tests keep it that way: no code uses the old
+prefix, and the start scripts ignore an old env file or variable.
 """
 
 import os
@@ -21,14 +21,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(HERE, 'backend'))
 
-# The only files allowed to say SHOEBOX_: the fallbacks themselves, the tests
-# of them, and comments explaining the old name.
+# The only file allowed to say SHOEBOX_: this test, which names it to forbid it.
 ALLOWED = {
-    'deploy/airlock-env.sh',
-    'systems/backend/env_compat.py',
-    'systems/backend/app.py',               # the comment on `import env_compat`
-    'systems/backend/auth.py',              # the old config key, in a comment
-    'systems/backend/test_auth_enforced.py',
     'systems/test_airlock_names.py',
 }
 
@@ -52,15 +46,6 @@ def test_no_code_uses_the_old_prefix():
     assert not offenders, '\n'.join(offenders)
 
 
-def test_python_copies_an_old_name_to_the_new_one():
-    import env_compat
-    env = {'SHOEBOX_AUTH_REQUIRED': '0', 'SHOEBOX_HOST_IP': '1.2.3.4',
-           'AIRLOCK_HOST_IP': '5.6.7.8'}
-    assert env_compat.apply(env) == ['SHOEBOX_AUTH_REQUIRED']
-    assert env['AIRLOCK_AUTH_REQUIRED'] == '0'
-    assert env['AIRLOCK_HOST_IP'] == '5.6.7.8', 'the new name wins'
-
-
 def _source(env_files, extra_env=None, show='AIRLOCK_HOST_IP AIRLOCK_GPU'):
     """Source airlock-env.sh in a copy of the deploy dir with these env files."""
     import shutil
@@ -82,17 +67,17 @@ def _source(env_files, extra_env=None, show='AIRLOCK_HOST_IP AIRLOCK_GPU'):
     return dict(line.split('=', 1) for line in out.split())
 
 
-def test_an_old_env_file_still_counts():
+def test_an_old_env_file_is_not_read():
     got = _source({'shoebox.env': 'SHOEBOX_HOST_IP=10.9.8.7\nSHOEBOX_GPU=1\n'})
-    assert got == {'AIRLOCK_HOST_IP': '10.9.8.7', 'AIRLOCK_GPU': '1'}
+    assert got['AIRLOCK_HOST_IP'] != '10.9.8.7'
+    assert got['AIRLOCK_GPU'] == 'unset'
 
 
-def test_the_new_file_wins_over_the_old_one():
-    got = _source({'shoebox.env': 'SHOEBOX_HOST_IP=10.9.8.7\n',
-                   'airlock.env': 'AIRLOCK_HOST_IP=192.168.1.18\n'})
-    assert got['AIRLOCK_HOST_IP'] == '192.168.1.18'
-
-
-def test_an_old_name_exported_by_hand_still_counts():
+def test_an_old_name_exported_by_hand_is_not_read():
     got = _source({}, extra_env={'SHOEBOX_HOST_IP': '10.2.2.2'})
-    assert got['AIRLOCK_HOST_IP'] == '10.2.2.2'
+    assert got['AIRLOCK_HOST_IP'] != '10.2.2.2'
+
+
+def test_the_env_file_is_read():
+    got = _source({'airlock.env': 'AIRLOCK_HOST_IP=192.168.1.18\nAIRLOCK_GPU=1\n'})
+    assert got == {'AIRLOCK_HOST_IP': '192.168.1.18', 'AIRLOCK_GPU': '1'}

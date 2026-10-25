@@ -37,8 +37,8 @@ from twisted.internet.task import react
 
 import wormhole
 
-# A wire name, like SUBPROTOCOL below: both ends must agree. It kept the shoebox
-# name through the rename to airlock (v5.6) and changed in v6.3.1, deliberately
+# A wire name, like SUBPROTOCOL below: both ends must agree. It kept its
+# pre-rename name through the rename to airlock (v5.6) and changed in v6.3.1, deliberately
 # and as a clean break: an install on v6.3.0 or earlier and one on v6.3.1 or later
 # cannot exchange albums, and neither reports an error - each waits for a peer
 # under a name the other never registers. The rendezvous server keeps a separate

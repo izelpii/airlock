@@ -35,10 +35,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 COOKIE_NAME = 'airlock_session'
-# Its name before the rename to airlock (v5.6.5). Still accepted, and swapped
-# for the new one on the next response, so nobody is signed out by the rename.
-# Remove in v5.7: anyone who has not visited since then signs in again.
-LEGACY_COOKIE_NAME = 'shoebox_session'
 SESSION_DAYS = 30
 MIN_PASSWORD_LENGTH = 12
 
@@ -418,8 +414,8 @@ def forbidden(message='Not permitted'):
 
 
 # Whether login is enforced, kept in app.config under one name and read
-# through enabled_for() only. It was 'SHOEBOX_AUTH_ENABLED', read with .get()
-# in eleven places: renaming the setter and missing one reader would have made
+# through enabled_for() only. It was once a differently named key, read with
+# .get() in eleven places: renaming the setter and missing one reader would have made
 # that reader see None and skip the login check. One reader cannot drift.
 _ENABLED_KEY = 'AUTH_ENABLED'
 
@@ -430,8 +426,8 @@ def enabled_for(app):
 
 
 def session_cookie(req):
-    """The session id this request carries, under the current or the old name."""
-    return req.cookies.get(COOKIE_NAME) or req.cookies.get(LEGACY_COOKIE_NAME)
+    """The session id this request carries."""
+    return req.cookies.get(COOKIE_NAME)
 
 
 def set_session_cookie(response, session_id, proto):
@@ -456,9 +452,8 @@ def set_session_cookie(response, session_id, proto):
 
 
 def clear_session_cookies(response):
-    """Remove the session cookie under both names - signing out must not leave one."""
+    """Remove the session cookie - signing out must not leave one."""
     response.delete_cookie(COOKIE_NAME, path='/')
-    response.delete_cookie(LEGACY_COOKIE_NAME, path='/')
     return response
 
 
@@ -488,10 +483,6 @@ def install(app, db, enabled=True):
             return None
 
         session_id = request.cookies.get(COOKIE_NAME)
-        legacy = False
-        if not session_id:
-            session_id = request.cookies.get(LEGACY_COOKIE_NAME)
-            legacy = bool(session_id)
         if session_id:
             c = db.get_connection()
             try:
@@ -501,8 +492,6 @@ def install(app, db, enabled=True):
             if row is not None:
                 g.current_user = row
                 g.session_id = session_id
-                if legacy:
-                    g.migrate_session_cookie = session_id
 
         if not enabled_for(app):
             return None
@@ -520,22 +509,6 @@ def install(app, db, enabled=True):
             return unauthenticated()
 
         return _enforce_catalog_role()
-
-    @app.after_request
-    def _migrate_session_cookie(response):
-        # A valid session arrived under the old cookie name: hand it back under
-        # the new one and clear the old. Not when this response is already
-        # setting or clearing the session cookie - login and logout decide that
-        # themselves, and re-setting it here would undo a logout.
-        session_id = getattr(g, 'migrate_session_cookie', None)
-        if not session_id:
-            return response
-        if any(h.startswith(COOKIE_NAME + '=') for h in response.headers.getlist('Set-Cookie')):
-            return response
-        set_session_cookie(response, session_id,
-                           request.headers.get('X-Forwarded-Proto', request.scheme))
-        response.delete_cookie(LEGACY_COOKIE_NAME, path='/')
-        return response
 
 
 # Routes where a viewer or editor is not enough. Matched against the URL rule so

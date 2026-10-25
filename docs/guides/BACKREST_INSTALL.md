@@ -14,8 +14,10 @@ does not ship with it (Backrest is GPL-3.0). It gives that machine:
 - the **maintenance** Airlock leaves to it: `prune` (reclaims the space of snapshots
   Airlock's retention forgot) and `check`.
 
-Airlock runs `backup` and `forget`; Backrest runs `prune` and `check`. restic's locks keep
-them apart - a backup that finds the repository locked by a prune waits up to 30 minutes.
+Airlock runs `backup` and `forget` (after a plain `restic unlock`, which removes only stale
+locks, such as one left by a backup cut off by a restart), and `check` when you press
+**Verify**; Backrest runs `prune` and the scheduled `check`. restic's locks keep them
+apart - a backup that finds the repository locked by a prune waits up to 30 minutes.
 
 ## 1. Run it
 

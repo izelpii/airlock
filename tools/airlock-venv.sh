@@ -76,11 +76,6 @@ airlock_venv_state() {
   if [[ ! -x "$venv/bin/$entry" ]]; then
     echo "incomplete $entry is not installed in it"; return
   fi
-  # Named .shoebox-stamp before the rename to airlock (v5.6.1). Adopted, so a
-  # venv built then is not reinstalled for a new file name.
-  if [[ ! -f "$venv/.airlock-stamp" && -f "$venv/.shoebox-stamp" ]]; then
-    mv "$venv/.shoebox-stamp" "$venv/.airlock-stamp" 2>/dev/null || true
-  fi
   if [[ ! -f "$venv/.airlock-stamp" ]]; then
     echo "stale no record of which requirements were installed"; return
   fi

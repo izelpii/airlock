@@ -22,8 +22,8 @@ ok()   { printf "  \033[32m✓\033[0m %s\n" "$1"; }
 warn() { printf "  \033[33m!\033[0m %s\n" "$1"; }
 
 echo "── Pods ─────────────────────────────────────────────────────────────────"
-for s in frontend album-gallery backend backend-albums backend-vision backend-geoloc \
-         backend-deepface backend-transcode gateway; do
+for s in frontend album-gallery backend backend-albums backend-vision backend-pets \
+         backend-geoloc backend-deepface backend-transcode gateway; do
   yaml="$SYSTEMS/$s/${s}-pod.yaml"
   # The start-podman.sh scripts use `podman run`, not `podman play kube`, so the
   # manifest teardown usually has nothing to do and still reports success. Try
@@ -32,8 +32,8 @@ for s in frontend album-gallery backend backend-albums backend-vision backend-ge
   if [[ -f "$yaml" ]]; then
     ( cd "$SYSTEMS/$s" && podman play kube --down "${s}-pod.yaml" >/dev/null 2>&1 ) && stopped="pod"
   fi
-  # airlock-gateway; shoebox-gateway is its name before v5.6.6.
-  for c in "$s" "workflow-$s" "airlock-$s" "shoebox-$s"; do
+  # The gateway's container is airlock-gateway; the backend's, workflow-backend.
+  for c in "$s" "workflow-$s" "airlock-$s"; do
     podman rm -f "$c" >/dev/null 2>&1 && stopped="${stopped:+$stopped, }container $c"
   done
   [[ -n "$stopped" ]] && ok "$s stopped ($stopped)" || warn "$s was not running"

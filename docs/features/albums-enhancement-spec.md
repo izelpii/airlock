@@ -1,7 +1,23 @@
 # Album Deployments — Implementation Specification
 
-**Status:** implemented, phases 1-4. Phases 5 (per-deployment users) and 6
-(packing) remain, by design — see section 10.
+**Status:** implemented, phases 1-4, and phase 6 (packing) as a command-line tool.
+Phase 5 (per-deployment users) remains, by design — see section 10.
+
+> **Status as of v6.4.4 (2026-10-25).** Phases 1-4 work as specified below. Packing
+> (phase 6) is built as `tools/pack_deployment.py` over `systems/backend/deployment_pack.py`,
+> with the `node` and `static` targets of §4.4; the `POST …/pack` HTTP endpoint was not
+> built. Beyond this spec: a deployment chooses which image sizes it packs (*What to
+> pack*, `packed_rungs`); `--stage` keeps an incremental bundle; and since v6.2.0 a
+> deployment can be published to a server from its card (**Publish to AWS**:
+> `publish.py`, `deployment-publish-to-server-spec.md`, the guide
+> `docs/guides/PUBLISH_TO_EC2.md`), which §4.5.7 and §11 had left out.
+> The product and its names are now Airlock (`airlock.lan`; `shoebox.lan` still
+> redirects). On the album side: albums are made with tools only (v6.1.9; albums
+> already made with words still open in their editor), or from a year template
+> (`album_templates.py`); album, deployment and catalog cards carry a band (v6.1.7);
+> an album card has **Transfer** and **Mass transfer** (v6.3.0) beside Deploy; and the
+> Deployments page moved under **Systems** in the sidebar (§8). Sections 2 and 4.5.1
+> record the system as measured when this was written.
 **Amended:** section 4.4 — a packed bundle is self-contained in the sense of
 "independent of this installation", NOT "static files only". It may ship the
 gallery's own Node server, which is what lets a deployed album keep its password
@@ -10,7 +26,7 @@ gate and grow features that client-side JavaScript alone cannot provide.
 **Related:**
 `documentation/specs/album-deployment-spec.md` (the per-album folder this builds on),
 `documentation/specs/local-storage-spec.md` §4E (why the backend may not drive podman),
-`systems/album-gallery/server.mjs`, `systems/gateway/shoebox.conf.template`,
+`systems/album-gallery/server.mjs`, `systems/gateway/airlock.conf.template` (was `shoebox.conf.template`),
 `systems/backend/app.py` (`_deploy_album`)
 
 ---
@@ -306,7 +322,9 @@ the dead branch in §2.2 lights up with no client change:
 browsers; it says whether to show a password form, and nothing more.
 
 Each album's own `album-<id>.json` (written by `_deploy_album`) gains **per-photo `width` and
-`height`**, read from `alternative_versions` at publish time. Nothing computes them at runtime —
+`height`**, read from `alternative_versions` at publish time. *(Now: the album manifest is
+`album.json`, with each section's photos in a `section-<id>.json` beside it; and
+`deployment.json` also carries `packed_rungs` and `enabled`.)* Nothing computes them at runtime —
 see §4.4, where that is what lets a bundle run without a server.
 
 ### 4.4 Portability: publish here, pack for elsewhere
@@ -583,6 +601,13 @@ tools/pack_deployment.py --catalog <slug> --deployment <slug> \
     --image ghcr.io/<owner>/album-gallery:<tag> --out ./dist
 ```
 
+> **As built:** only the script exists; there is no `/pack` HTTP endpoint. Its options are
+> `--catalog`, `--deployment`, `--target node|static` (default `node`), `--domain`,
+> `--image`, `--out`, `--stage DIR`, `--max-age MINUTES`, `--allow-unlocked-static`,
+> `--catalogs-root` and `--spa-dist`. It packs only the image sizes the deployment's
+> *What to pack* allows (`packed_rungs` in `deployment.json`). In-app, the same code
+> (`deployment_pack.py`) is what **Publish to AWS** uses.
+
 It reads **only files** — never `workflow_results.db`. The deployment directory
 already carries everything a bundle needs, and the catalogs tree is shared with
 the running backend over a bind mount where opening a WAL database from the host
@@ -618,6 +643,12 @@ tree makes it incremental if it stops being fine.
 Deliberately not solved here: **incremental sync**, and **a bundle reaching back
 to the origin** for full-size originals. §4.4 already records why the second one
 trades away the independence that makes a bundle worth having.
+
+> **Since v6.1.15 / v6.2.0:** incremental sync exists. `pack_deployment.py --stage DIR`
+> keeps the bundle as a folder (media hard-linked from the catalog) that later runs
+> refresh in place, so `rsync` sends only what changed; and the deployment card's
+> **Publish to AWS** does the same over SSH (preview, send, delete, never `.env`). See
+> `docs/guides/PUBLISH_TO_EC2.md`. Reaching back to the origin is still not built.
 
 ---
 
@@ -738,6 +769,12 @@ unregistered, which is the correct outcome.
 
 ## 7. URLs
 
+> **Since v5.6.4:** the local domain is `airlock.lan` (`https://airlock.lan/gallery/…`,
+> `https://<catalog>.airlock.lan/…`), the nginx upstream is `airlock_gallery` and the
+> config is `systems/gateway/airlock.conf.template`. `shoebox.lan` and
+> `<catalog>.shoebox.lan` answer with a permanent redirect to the airlock names. The
+> examples below keep the names of the time.
+
 **Decided: both forms, and the catalog appears in both.** Path-based works today; the subdomain
 form is written at the same time and starts working when wildcard DNS exists.
 
@@ -846,6 +883,14 @@ The gallery is reached at `/d/<catalog>/<slug>/…` either way. So:
 
 ## 8. UI
 
+> **As of v6.4.4:** the Deployments page (`/albums/deployments`) is listed under **Systems**
+> in the sidebar, beside Workflows; the Albums group holds Albums and Transfers. Each card
+> has the deployment band (v6.1.7); albums are ticked in and out on the card itself and
+> republish at once; **Edit** opens a dialog (name, address/slug with the broken-link
+> warning, description, albums, password) rather than flipping the card; the card's flip side is
+> *What to pack*; and, for owners, the foot of the card has **Publish to AWS**
+> (v6.2.0/v6.2.2). An album card also offers **Deploy** into a deployment.
+
 **Under Albums, not Admin.** Storage routes are installation-wide, so they sit in Admin;
 a deployment belongs to a catalog (§3), and the sidebar's Albums group is already gated on
 `activeCatalog`. A second item beside "My albums":
@@ -931,7 +976,9 @@ before login, and both succeed after.
 **Phase 5 — per-deployment users.** Deferred by design: §5's session is the seam. A
 `deployment_users` table and a username field on the same form, with the same cookie.
 
-**Phase 6 — packing.** Specified in detail in §4.5, and unblocked: all three prerequisites in
+**Phase 6 — packing.** *Built as the command-line packer (§4.5.6 "As built"); the HTTP
+endpoint was not, and the Node target runs the gallery image under Docker Compose rather
+than shipping `server.mjs` for bare `node` (§4.5.4).* Specified in detail in §4.5, and unblocked: all three prerequisites in
 §4.4 are met (dimensions are in the manifest, every path is relative, the manifest is
 authoritative). `POST /api/catalogs/<cid>/deployments/<id>/pack?target=node|static` plus a
 standalone script: materialise the symlinks into real files, write `catalogs.json`, add
@@ -961,9 +1008,11 @@ login and 200 after.
   dnsmasq config or a DNS record, not application work.
 - **Per-deployment users** (§10, Phase 5).
 - **The packer itself** (§10, Phase 6). §4.4 is the architecture it needs; the tar is not part
-  of this change.
+  of this change. *(Since built: `tools/pack_deployment.py`.)*
 - **Uploading a bundle anywhere.** Packing produces a bundle; where it goes is the user's
   business, and an S3 client in this backend is a credential problem nobody asked for.
+  *(Since v6.2.0 Airlock publishes to a server the owner set up, over SSH with a key per
+  server; it still holds no AWS or other cloud credentials.)*
 - **An authenticated media endpoint a deployed bundle can call back to** for originals it did
   not ship (§4.4, "Not decided here"). Considered and deliberately left open: it would make a
   remote album depend on this machine being awake, which is the opposite of what packing is
@@ -1033,12 +1082,16 @@ Phase 4 — password
 [x] A locked deployment gates albums.json, assets AND the album list            (§5.3)
 [x] Verify: direct image URL is 401 before login, 200 after
 
+Phase 6 — pack  (tools/pack_deployment.py; no HTTP endpoint)
+[x] Materialise symlinks, SPA build (static), .tar.gz, --target node|static     (§4.4)
+[x] Node target ships .auth.json (0600) and compose.yml naming the gallery
+    image; the password gate still works                                        (§4.4)
+[x] Static target ships no .auth.json; a locked deployment refuses unless
+    --allow-unlocked-static, and then warns                                     (§4.4)
+
 LATER
 [ ] Phase 5 — per-deployment users, on the same session                         (§10)
-[ ] Phase 6 — pack: materialise symlinks, SPA build, .tar.gz, target=node|static (§4.4)
-[ ] Node target ships server.mjs + .auth.json; the password gate still works    (§4.4)
-[ ] Static target ships NEITHER; a locked deployment refuses or warns           (§4.4)
-[ ] Verify a Node bundle runs with only `node` installed, no shoebox in reach   (§10)
+[ ] Verify a Node bundle runs with only `node` installed, no Airlock in reach   (§10)
 [ ] Verify a static bundle browses on a plain file server, no Node at all       (§10)
 [ ] Wildcard DNS (dnsmasq, or *.lozaprada.org) — infrastructure, not code       (§7.2)
 ```

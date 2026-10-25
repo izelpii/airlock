@@ -171,7 +171,9 @@ spec:
     # new machine (see also CATALOGS_HOST_DIR in start-podman.sh).
     - name: catalogs
       hostPath:
-        path: /Users/izelpi/Personal/Development/shoebox/catalogs
+        # Relative to the directory you run `podman play kube` from (systems/backend/):
+        # the repository's catalogs/, the CATALOGS_HOST_DIR default in deploy/airlock-env.sh.
+        path: ../../catalogs
         type: DirectoryOrCreate
 
     # ── Input directory ────────────────────────────────────────────────────────
@@ -192,7 +194,8 @@ spec:
     # rather than silently creating an empty directory and importing nothing.
     - name: input
       hostPath:
-        path: /Users/izelpi/Personal/Development/shoebox/IN
+        # The repository's IN/, the INPUT_HOST_DIR default (relative, as above).
+        path: ../../IN
         type: Directory
 
     # ── Storage root ───────────────────────────────────────────────────────────

@@ -1,6 +1,12 @@
 # Picture ingestion: where the time goes, and a faster architecture
 
 **Written:** 2026-09-27
+
+> **Status (v6.4.4):** §1–§7 are the analysis as it stood on that date, and
+> describe the phased import, not today's default. §8 is what was built: the
+> streaming import, "Import Files", the default for every new storage route.
+> Since then the imports have gained move mode (v4.8.0) and Live Photo grouping
+> (v4.11.0); both apply to the streaming import too (§8).
 **Question:** copying the same photos with `cp` or `rsync` is far faster than
 importing them. Which parts of the import cost the time, and how should it be
 re-architected, for any kind of storage, while keeping its two requirements:
@@ -364,9 +370,16 @@ and its command-line entry point). Either script can run any import workflow.
   copy of any content is the one with the smallest path, the phased import's
   rule exactly. A later same-content file is hashed and not copied.
 - **Pairs and render:** a folder's files go to render once the whole folder is
-  read, since its RAW+JPEG pairs are then known. The run's definitive grouping
+  read, since its RAW+JPEG pairs and Live Photos (a still and its clip,
+  `lib/grouping.py`) are then known. The run's definitive grouping
   is recorded at the end, as before. A pair split across two folders would
   have both files rendered (wasted work, never a wrong record).
+- **Render does not overlap on one spinning disk.** When source and catalog
+  share a spinning disk, previews start once every file is in, rather than
+  being throttled alongside (`IMPORT_RENDER_DURING_INGEST=1` overlaps them).
+  Video previews always wait until every file is in, and until the last photo
+  is rendered (`IMPORT_DEFER_VIDEO_RENDER`, `IMPORT_VIDEOS_LAST`, both on by
+  default).
 
 **Checked:**
 
@@ -387,22 +400,31 @@ and its command-line entry point). Either script can run any import workflow.
 **Using it:**
 
 - **It is the default** since 2026-09-27: every new storage route's import
-  workflow runs it (`app.py` `DEFAULT_INGEST_SCRIPT`), and it is "Ingest
-  Files" in the script list; the previous one is "Ingest Files (phased)".
+  workflow runs it (`app.py` `DEFAULT_INGEST_SCRIPT`), and it is "Import
+  Files" in the script list; the previous one is "Legacy Two-Stage Import".
 - Workflows created before then keep the phased script until switched: edit
   the workflow and pick `io_picture_import_v2_workflow.py`.
 - Back to the phased import for new routes:
-  `SHOEBOX_INGEST_SCRIPT=io_picture_import_workflow.py` in
-  `deploy/shoebox.env`, then restart the backend.
+  `AIRLOCK_INGEST_SCRIPT=io_picture_import_workflow.py` in
+  `deploy/airlock.env`, then restart the backend.
 - **Plan:** after a period of use, move `io_picture_import_workflow.py` into
   `workflows/legacy/`. The streaming script imports it (its writer, recording,
   grouping and entry point), so that move means first folding those parts
   into a shared module, not just moving a file.
-- Overrides, also in `shoebox.env`: `IMPORT_READERS` (a fixed count, no
+- Overrides, also in `airlock.env`: `IMPORT_READERS` (a fixed count, no
   tuning), `IMPORT_READ_CHUNK_MB`, `IMPORT_META_CONCURRENCY`,
-  `IMPORT_RENDER_CONCURRENCY`, `IMPORT_STAGE_COPIES=0`.
+  `IMPORT_RENDER_CONCURRENCY`, `IMPORT_STAGE_COPIES=0`,
+  `IMPORT_RENDER_DURING_INGEST`, `IMPORT_DEFER_VIDEO_RENDER`, `IMPORT_VIDEOS_LAST`.
 - Progress uses the same five rows on the Import Progress page. Here probe,
   resolve, place and render advance together.
+- **Ingest modes.** Both scripts honour the catalog's `ingest_mode`: **copy**
+  (described above), **reference** (files are indexed where they are; nothing
+  is copied into the catalog) and **move** (since v4.8.0: new files are renamed
+  into the catalog where the disk allows it, otherwise copied, verified by
+  SHA-256 and deleted from the source, only after the database commit;
+  duplicates go to `<source>/DUPS/`). Move mode lives in `lib/import_move.py`
+  and needs a storage route marked "imports may move files"
+  (ingest-move-spec.md).
 
 ---
 

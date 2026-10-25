@@ -1,6 +1,29 @@
 # Pet recognition — implementation spec
 
-**Status:** ready to implement, gated on §12. Nothing here is built.
+**Status:** implemented in v5.2.0 (2026-10-09), with patches through v5.2.9
+and the grouping and paging fixes of v5.4.24 – v5.4.30 (released in v5.5.0).
+Checked against the code at v6.4.4 (Airlock Photos, formerly Shoebox): the
+design below holds, and the places where the build departed from it are marked
+*Now:* in the text. The main ones:
+
+- **Pets are on by default for a new catalog**, switched on the catalog form,
+  not on the Pets page (§10.1). A catalog with no recorded setting is off.
+- The two workflows are named **Measure and Match Pets** and **Group Unnamed
+  Pets** (§6).
+- Automatic naming also requires closeness to the pet's **centre**, and groups
+  are trimmed to their core, after single-link grouping chained 7,378 animals
+  into one (§6.1, §6.2).
+- The model weights are **not baked into the image**; they are bind-mounted
+  from `systems/backend-pets/weights/` (§4.2).
+- No `/pets/` path on the gateway; the service is `pets.airlock.lan` (§4.5).
+- Not built: manual pet boxes, splitting a group, an auto-assign audit table,
+  hiding the menu entries when pets are off, a `*_PETS_MODE` setting.
+- Pets are also found by **Search** (v6.0.0), whose people-and-pets filter reads
+  `pet_detections`; new albums are no longer built from words (v6.1.9) (§9).
+- The pet schema (empty tables, the two `people` columns, the view) is
+  ensured by `models.py` on every catalog open, pets on or off; "off" means no
+  rows, no model and no container.
+
 **Date:** 2026-10-08.
 **Supersedes:** the one-page requirement that previously occupied this file; its
 asks are carried in §1.1 and nothing has been dropped.
@@ -47,7 +70,7 @@ disagree, this file is wrong and should be fixed.
 | D2 | A pet is a **`people` row** in the same family category as its owners | §3.1; `category` is the household, `kind` is the species |
 | D3 | Pets get **their own page**, one card per *named* pet | §8.1 |
 | D4 | A photograph **links to a pet as it links to a person** | §3.6 one view, §9 one query pattern |
-| D5 | The models are **optional and off by default** | §10; off must cost zero |
+| D5 | The models are **optional and off by default** | §10; off must cost zero. *Now:* on by default for a new catalog (§10.1) |
 | D6 | Unknown animals are **grouped detections, never cards** | §3.5; a `people` row means somebody named it |
 | D7 | Detection **shares the decode** with `Auto Detect Faces` | §5; a second pass would re-read 373,020 originals |
 
@@ -312,6 +335,10 @@ framework so `SHOEBOX_PETS_MODE` can later move it to a GPU without any caller
 changing. Register it in `start-all.sh`'s `BUILDABLE` list and give it a
 `--build=pets` alias beside `transcode`.
 
+*Now:* it is registered and `--build=pets` works, but it runs only as a
+container; there is no `AIRLOCK_PETS_MODE`. `start-all.sh` starts it only when
+some catalog has pets switched on.
+
 ### 4.2 The models
 
 | | Detection | Identity |
@@ -399,14 +426,20 @@ runs, and `backend-deepface` already warns rather than silently downloading
 ([backend-deepface/app.py:173](../../systems/backend-deepface/app.py#L173)) —
 which is a warning that fires too late. Bake them; fail the build if absent.
 
+*Now:* not done that way. The image carries no weights; `start-podman.sh`
+bind-mounts `systems/backend-pets/weights/`, warns at start for a missing
+file, and the endpoint that needs it answers 503 (`/health` says which are
+present). `tools/fetch_pet_weights.sh` fetches the detector and
+`tools/export_animal_clip.py` exports the identity model to ONNX.
+
 ### 4.3 Endpoints
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| `GET` | `/health` | — | `{status, models: {detect, embed}, loaded: bool}` |
-| `POST` | `/detect` | multipart JPEG + `max_dim` | `{detections: [{x, y, w, h, confidence, species}], width, height}` |
-| `POST` | `/embed` | multipart JPEG crop | `{embedding: [512 floats]}` |
-| `POST` | `/embed-batch` | multipart, up to N crops | `{embeddings: [[…], …]}` |
+| `GET` | `/health` | — | `{status, models: {detect, embed}, present, loaded, …}` |
+| `POST` | `/detect` | multipart JPEG + `max_dim` | `{detections: [{x, y, w, h, confidence, species}], width, height, size}` |
+| `POST` | `/embed` | multipart JPEG crop | `{embedding: [512 floats], dims, model}` |
+| `POST` | `/embed-batch` | multipart, up to N crops | `{results: [{index, embedding} or {index, error}], dims, model}` |
 
 `/detect` takes the **already-prepared** JPEG and returns boxes in that image's
 coordinate space, together with the `width`/`height` it used, so the caller can
@@ -439,6 +472,13 @@ shoebox.conf.template, a
 workflows, never from the browser — unlike `backend-vision`, which the frontend
 calls directly. Routing it through the gateway anyway keeps the service naming
 uniform and costs nothing.
+
+*Now:* the template is
+[airlock.conf.template](../../systems/gateway/airlock.conf.template), with
+`upstream airlock_pets` and a server block for `pets.airlock.lan` (plain HTTP,
+like the other service names). The `/pets/` location block was removed: `/pets`
+is a frontend route, and the block made reloading or bookmarking the Pets page
+return the detector's 404.
 
 ---
 
@@ -532,7 +572,7 @@ nothing about files. That is also what makes it testable without a catalog.
 
 Two new scripts. Detection is not one of them — it is §5.
 
-### 6.1 `pe_identify_pets.py` — "Identify Pets"
+### 6.1 `pe_identify_pets.py` — "Identify Pets" (now "Measure and Match Pets")
 
 **Reads** `pet_detections` without an embedding; **writes** `ai_pet_contents`
 (crop + embedding) and `pet_similarity_scores`; may write
@@ -554,6 +594,13 @@ Phases, each resumable:
    auto-assignment is worse than an unnamed dog, because the user has to find it
    to undo it.
 
+   *Now:* `PET_MATCH_DISTANCE` 0.22 and `PET_MATCH_MARGIN` 0.08, plus a third
+   condition, `PET_MATCH_CENTRE_DISTANCE` 0.28: the animal must also be that
+   close to the pet's centre (the mean of all its photographs), not merely to
+   one of them. With one pet the margin is always met, and the nearest-photograph
+   rule alone chained thousands of other animals onto her. There is no audit
+   table for pets.
+
 Scoring is **not** restricted by species. It was, on the reasoning that "a cat
 crop scored against dog references is wasted work and a source of error", and
 that was wrong twice: `sim = q_m @ ref_m.T` computes every pair regardless, so
@@ -567,7 +614,7 @@ detection is embedded in phase 2 whether named or not, so naming one *is*
 adding it to the reference set. One fewer workflow, and worth a comment in
 `defaults.json` so nobody adds it for symmetry.
 
-### 6.2 `pe_cluster_pets.py` — "Group Unknown Pets"
+### 6.2 `pe_cluster_pets.py` — "Group Unknown Pets" (now "Group Unnamed Pets")
 
 **Reads** `ai_pet_contents.embedding` for detections with `person_id IS NULL`;
 **writes** `pet_clusters`, `pet_cluster_members`.
@@ -577,6 +624,12 @@ adding it to the reference set. One fewer workflow, and worth a comment in
   something — the same mechanism
   [IdentifyGroups.js:25](../../systems/frontend/src/views/IdentifyGroups.js#L25)
   already uses.
+
+  *Now:* crops closer than `PET_CLUSTER_DISTANCE` (0.28) are linked, and each
+  finished group is **trimmed to its core** — no member further than that from
+  its centre — with the rest grouped again. Linking alone chained 7,378 of
+  `family`'s 7,471 animals into one group; trimmed, the one dog is a clean
+  5,021.
 - Groups below `PET_CLUSTER_MIN_MEMBERS` (default 3) are not offered: a group of
   one is a detection, and offering it as a group to name wastes the user's
   attention.
@@ -597,10 +650,10 @@ doing it (location-spec.md §7.1).
 `"default": false` for both, because D5 says off by default; §10 creates them.
 
 ```json
-{ "script": "pe_identify_pets.py", "name": "Identify Pets",
+{ "script": "pe_identify_pets.py", "name": "Measure and Match Pets",
   "description": "Crop each detected animal, measure it, and score it against the pets you have named.",
   "type": "AI / ML", "ingestion": false, "default": false, "order": 80 },
-{ "script": "pe_cluster_pets.py", "name": "Group Unknown Pets",
+{ "script": "pe_cluster_pets.py", "name": "Group Unnamed Pets",
   "description": "Group animals that look like the same one, ready to be named.",
   "type": "AI / ML", "ingestion": false, "default": false, "order": 90 }
 ```
@@ -649,10 +702,13 @@ Reasons, in the table's own idiom:
 
 | Event | Enqueues | Quiet |
 |---|---|---|
-| `import_completed` | `pe_identify_pets.py` | existing |
-| `pets_detected` (new; raised when `Auto Detect Faces` completes) | `pe_identify_pets.py` | 0 s |
-| `pets_identified` (new) | `pe_cluster_pets.py` | 60 s |
-| `pets_changed` (new; a pet named, renamed, merged or deleted) | `pe_identify_pets.py` | 120 s |
+| `import_completed` | `pe_identify_pets.py`, `pe_cluster_pets.py` | existing (0 s) |
+| `pets_detected` (new; raised when `Auto Detect Faces` completes) | `pe_identify_pets.py`, `pe_cluster_pets.py` | 0 s |
+| `pets_identified` (new) | `pe_cluster_pets.py` | 0 s |
+| `pets_changed` (new; a pet named, renamed, merged or deleted) | `pe_identify_pets.py`, `pe_cluster_pets.py` | 120 s (`QUIET_PETS_CHANGED`) |
+
+(As built; the design had each event enqueue only the first workflow, and
+`pets_identified` wait 60 s.)
 
 `pets_detected` is **not** conditional on that run having written any
 `pet_detections` rows, although an earlier draft of this table said it was. No
@@ -710,11 +766,13 @@ reference. Return 400.
 
 | Method | Path | Returns / does |
 |---|---|---|
-| `GET` | `/api/catalogs/<cid>/pets/<pid>/detections?year=` | the animal's boxes, with crop URLs and file ids |
+| `GET` | `/api/catalogs/<cid>/pets/<pid>/detections?year=&limit=&offset=` | one page of the animal's boxes, newest first, with crop URLs, file ids and real totals |
 | `GET` | `/api/catalogs/<cid>/pet-detections/<did>/crop` | the crop image; `Cache-Control: immutable`, as the image endpoints already do |
 | `POST` | `/api/catalogs/<cid>/pet-detections/<did>/assign` | `{person_id}` — name one detection |
 | `DELETE` | `/api/catalogs/<cid>/pet-detections/<did>/assign` | unname it; the detection survives |
-| `POST` | `/api/catalogs/<cid>/pet-detections` | a manual box: `{file_id, x, y, w, h, species, person_id}`, `source='Manual'` |
+| `POST` | `/api/catalogs/<cid>/pet-detections` | a manual box: `{file_id, x, y, w, h, species, person_id}`, `source='Manual'`. *Not built.* |
+| `GET` | `/api/catalogs/<cid>/images/<fid>/pet-detections` | every animal in one photograph, for the viewer's overlay *(added)* |
+| `PUT` | `/api/catalogs/<cid>/pets/<pid>/profile-photo` | the starred card picture, §8.1 *(added)* |
 
 ### 7.4 New — groups
 
@@ -723,10 +781,10 @@ Mirrors `/faces/clusters` ([app.py:8027](../../systems/backend/app.py#L8027),
 
 | Method | Path | Returns / does |
 |---|---|---|
-| `GET` | `/api/catalogs/<cid>/pets/clusters?min_cohesion=&species=` | unresolved groups, biggest first, each with sample crops |
+| `GET` | `/api/catalogs/<cid>/pets/clusters?min_members=&max_members=&species=` | unresolved groups, biggest first, each with sample crops (*now* filtered by size, not cohesion) |
 | `POST` | `/api/catalogs/<cid>/pets/clusters/<clid>/assign` | `{person_id}` **or** `{name, species, category}` to create the pet and resolve in one call |
 | `POST` | `/api/catalogs/<cid>/pets/clusters/<clid>/reject` | not an animal, or not worth naming; it stays out of future offers |
-| `POST` | `/api/catalogs/<cid>/pets/clusters/<clid>/split` | *optional, §15.3* |
+| `POST` | `/api/catalogs/<cid>/pets/clusters/<clid>/split` | *optional, §15.3; not built* |
 
 The `{name, species, category}` form is the one the UI will use most: naming a
 group is a single action that creates the `people` row, sets `kind='pet'`,
@@ -737,8 +795,8 @@ anything else leaves a half-named animal if the second call fails.
 
 | Method | Path | Returns / does |
 |---|---|---|
-| `GET` | `/api/catalogs/<cid>/pets/settings` | `{enabled, workflows_present, detections, named, unresolved_groups}` |
-| `PUT` | `/api/catalogs/<cid>/pets/settings` | `{enabled: true}` sets `pets_enabled` **and creates the two workflows** (§10) |
+| `GET` | `/api/catalogs/<cid>/pets/settings` | `{enabled, detections, named_detections, pets, embedded, unresolved_groups, species}` |
+| `PUT` | `/api/catalogs/<cid>/pets/settings` | `{enabled: true}` sets `pets_enabled` **and creates the two workflows** (§10). *Removed in v5.2.2:* the switch is `pets_enabled` on `POST`/`PUT /api/catalogs`, §10.1 |
 
 `GET` returning the counts lets the page say "4,812 animals found, 2 named, 7
 groups waiting" rather than offering a bare toggle.
@@ -768,7 +826,8 @@ component, so if a fifth appears, extract instead.
 3. The category select is the **same** `peopleCategoryAPI` vocabulary, so a pet
    joins `Family` beside its owners (D2). It is not a separate list.
 4. A header strip showing the §7.5 counts, with a link to Identify pets when
-   groups are waiting, and the enable switch when pets are off.
+   groups are waiting, and the enable switch when pets are off. *Now:* with
+   pets off it points at the catalog settings instead (§10.1).
 
 **One card per named pet.** No cards for unknowns, ever (D6).
 
@@ -813,6 +872,9 @@ detections, biggest first, each showing a handful of crops, a cohesion slider
 with the same scale as Identify groups, and two actions: **name it** (an
 existing pet, or a new one in the same dialog) and **not an animal**.
 
+*Now:* the slider sets the smallest group shown (*at least N photographs per
+group*, 1–12); each group shows its cohesion as a number.
+
 Naming a group is one request (§7.4) and the group leaves the list immediately.
 
 ### 8.4 Routing and menu
@@ -831,6 +893,9 @@ it will then hold both faces and animals; its `defaultOpen` gains
 
 Both entries are **hidden when pets are off for every accessible catalog.** An
 empty page behind a menu item teaches people to ignore the menu.
+
+*Now:* not built. Both entries show whenever a catalog is open; with pets off
+the Pets page says so and points at the catalog settings.
 
 ### 8.5 What is reused verbatim
 
@@ -890,6 +955,15 @@ equivalent paths will use both, inconsistently, across fragments nobody reads.
 Unaffected. Their stored fragments still reference `face_detections`, which
 still means what it meant. Nothing is rewritten, and an album built before pets
 existed returns the same photographs after.
+
+### 9.3 Now: Search, and albums made with tools
+
+The §9.1 prompt change is in `backend-albums`. Since v6.1.9 the New album
+dialog no longer offers albums built from words (new albums are made with
+tools; those already made with words still open in their editor), so the main
+way to find "photos with Rex" is **Search** (v6.0.0): its people-and-pets
+filter and the names in each result read `pet_detections` alongside
+`face_detections` (`search.py`).
 
 ---
 
@@ -1179,6 +1253,9 @@ The **identity** half. `animal_clip_vit_b32.onnx` does not exist yet:
 AvitoTech's model is published as PyTorch and needs a one-off ONNX export on a
 machine with torch. Detection works without it; identification does not, and
 its 224 px cost is unmeasured.
+
+*Now:* the export is `tools/export_animal_clip.py`, and its output is what
+`backend-pets` loads for identity (§4.2).
 
 ## 13. Testing
 

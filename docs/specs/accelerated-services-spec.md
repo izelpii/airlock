@@ -7,10 +7,19 @@ has a usable NVIDIA setup (oldserver's podman 3.4.4 predates CDI). Tests:
 **Builds on:** `redesign-ports-routes-spec.md` (the gateway and the `*.shoebox.lan` names),
 `local-storage-spec.md` (host paths vs container paths), `ingest-move-spec.md`.
 **Related:**
-`start-all.sh`, `stop-all.sh`, `deploy/shoebox-env.sh`, `deploy/status.sh`,
+`start-all.sh`, `stop-all.sh`, `deploy/airlock-env.sh` (was `shoebox-env.sh`), `deploy/status.sh`,
 `systems/backend-deepface/start-host.sh` and `start-podman.sh`,
-`systems/gateway/shoebox.conf.template` (the upstreams),
+`systems/gateway/airlock.conf.template` (was `shoebox.conf.template`; the upstreams),
 `systems/backend/workflows/lib/utilities.py` (`create_video_proxy`, `create_video_poster`).
+
+> **As of v6.4.4 (2026-10-25):** released in v4.9.0 and in use unchanged in design. Since then the
+> v5.6 rename gave every name below an `airlock` form: `deploy/airlock.env`,
+> `AIRLOCK_DEEPFACE_MODE` / `AIRLOCK_TRANSCODE_MODE` (the old `SHOEBOX_*` names are no longer read, since v6.4.5),
+> `airlock_service_mode` in `deploy/airlock-env.sh:797`, `tools/airlock-venv.sh`
+> (`airlock_venv_state`, `airlock_venv_ensure`), `systems/gateway/airlock.conf.template` and the
+> `*.airlock.lan` names. The spec keeps the names it was written with. Native deepface on Apple
+> Silicon runs **without** `tensorflow-metal` (§2.1 note), so its `host` mode is CPU. The
+> reference deployment moved from oldserver to homeserver (Linux).
 
 ---
 
@@ -49,6 +58,13 @@ The backend calls it at `DEEPFACE_URL` (`http://deepface.shoebox.lan`); the gate
 the host, the gateway reaches it the same way in both modes. **Where a service runs is invisible
 to its callers.** That property is what this spec generalises.
 
+> **Correction (v6.4.4):** `start-host.sh` does not install `tensorflow-metal`, and did not at
+> v4.0.0 either: Apple's plugin supports TensorFlow ≤ 2.18 and the service needs ≥ 2.20
+> (`systems/backend-deepface/start-host.sh:88-108`). Native deepface on a Mac runs on the CPU;
+> detection (YuNet) never used Metal. `airlock_host_gains` still picks `host` for deepface on
+> Apple Silicon (`deploy/airlock-env.sh:770-772`). Where this spec says "Metal" for deepface, read
+> "native, CPU".
+
 ### 2.2 Where the heavy work actually is
 
 | Work | Where it runs today | Uses the GPU? |
@@ -58,6 +74,10 @@ to its callers.** That property is what this spec generalises.
 | Image descriptions, album text (LLMs) | **Ollama**, called by `backend-vision` and `backend-albums` | Ollama runs **natively on the host** already and uses the GPU itself |
 | Video previews and posters (ffmpeg) | **inside the import workflow**, in the backend container | no — software decode and `libx264` |
 | Photo previews (PIL) | inside the import workflow | no — and not worth it (§3.4) |
+
+> **Since v5.1.0** the embedding model is chosen per catalog: VGG-Face (TensorFlow) or SFace, an
+> ONNX model run by OpenCV's DNN module like YuNet; the service default is `DEEPFACE_MODEL`
+> (`systems/backend-deepface/app.py:193`). See `docs/architecture/ARCHITECTURE.md`.
 
 Two consequences:
 
@@ -92,6 +112,12 @@ host mode buys differs by both:
 | Linux x86_64 | `gpu` when usable (§3.3), else `container` | same |
 | Linux arm64 (Raspberry Pi 64-bit) | `container` | `container`; `host` opt-in for V4L2 |
 | Linux arm32 | unsupported — no TensorFlow wheels at all | `container` |
+
+> **As implemented** (`deploy/airlock-env.sh:770-858`): `auto` picks `host` only where
+> `airlock_host_gains` names an accelerator (deepface on Apple Silicon, transcode on any Mac),
+> then `gpu` on Linux when an NVIDIA CDI spec is usable, else `container`. Since v4.13.0 a Mac
+> keeps 3600 MB of the VM in reserve for builds, not 700 MB (`airlock-env.sh:664-668`), and
+> the worker count is capped at 4 (`airlock-env.sh:670-681`).
 
 ### 3.1.1 `host` is conditional on the host, and says so
 
@@ -159,7 +185,7 @@ questions, and the stamp that records the answers is written only after `pip` su
 | `bin/<entry>` exists | the thing the service `exec`s — `gunicorn` |
 | a stamp of `requirements.txt` | editing that file reinstalls instead of running yesterday's packages |
 
-Implemented once, in `tools/shoebox-venv.sh` (`shoebox_venv_state`, `shoebox_venv_ensure`), and
+Implemented once, in `tools/airlock-venv.sh` (`airlock_venv_state`, `airlock_venv_ensure`), and
 used by both `start-host.sh` scripts and by `deploy/deploy.sh`. Every start checks — not only the
 first — so a half-built venv is rebuilt rather than mistaken for a finished one.
 
@@ -283,6 +309,9 @@ in software once, and the response says so. The proxy format does not change: H.
 - `start-podman.sh` adds `--device nvidia.com/gpu=all` in `gpu` mode. Images that need CUDA
   libraries (`backend-deepface`, `backend-transcode`) get a `-gpu` build variant from a CUDA base
   image; the CPU image stays small for everyone else.
+  *As built: only deepface has one (`backend-deepface-gpu`,
+  `systems/backend-deepface/start-podman.sh:25-29`); transcode uses its one image and relies on
+  the CDI spec to inject the driver (`systems/backend-transcode/Dockerfile:6-7`).*
 - Too-old cards (oldserver's Kepler GTX 880M: driver 470 legacy, CUDA ≤ 11.4, no HEVC decode) are
   detected by `/health` reporting no useful encoders, and `auto` picks `container`.
 
@@ -312,8 +341,18 @@ thing, validates its inputs, and is started, stopped and health-checked like eve
 
 ## 5. Security
 
-- Native services bind to the **podman host interface and localhost only**, never `0.0.0.0` on a
-  machine with a LAN address — the gateway is the only way in from outside, as for containers.
+- Native services bind to **localhost and the podman host interface**, so that the gateway is the
+  only way in from outside, as for containers (`airlock_native_binds`, `deploy/airlock-env.sh`):
+  - **macOS:** `127.0.0.1` only.
+  - **Linux, `AIRLOCK_HOST_ALIAS` is an IP address** (the usual case: `AIRLOCK_HOST_IP` in
+    `deploy/airlock.env`, or the address detected and cached there on the first start):
+    `127.0.0.1` and that address.
+  - **Linux, `AIRLOCK_HOST_ALIAS` is not an IP address** (a host name, or detection failed): the
+    services fall back to **`0.0.0.0`** — every interface, so deepface (:5001) and transcode
+    (:5004) are reachable from the LAN without going through the gateway. Containers need some
+    address on the host to reach them, and without an IP there is no narrower one to choose.
+    Avoid it by setting `AIRLOCK_HOST_IP` to the machine's LAN address in `deploy/airlock.env`,
+    or close those ports with the host firewall.
 - `backend-transcode` accepts catalog-relative paths only, resolved and contained under its
   `CATALOGS_ROOT`; it never takes a command line, a codec string or an output path outside
   `cache/`.

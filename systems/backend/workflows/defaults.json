@@ -143,8 +143,9 @@
       "ingestion": false,
       "_default_comment": [
         "NOT seeded with a new catalog. The `workflows` table has no `enabled`",
-        "column, so EXISTENCE IS THE SWITCH: these two rows are created by",
-        "PUT /api/catalogs/<id>/pets/settings {enabled:true}, through",
+        "column, so EXISTENCE IS THE SWITCH: these two rows are created when",
+        "pets are switched on in the catalog form (POST /catalogs or PUT",
+        "/catalogs/<id>), by app.apply_pets_enabled through",
         "workflow_defaults.create_pet_workflows, exactly as a storage route",
         "creates its import workflow.",
         "",

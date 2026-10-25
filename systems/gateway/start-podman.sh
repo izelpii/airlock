@@ -31,14 +31,6 @@ UPSTREAM_HOST="${UPSTREAM_HOST:-airlock-host}"
 # The browser-facing name. Set SERVER_DOMAIN=lozaprada.org when this server
 # moves to a public domain - see user-authentication-spec.md section 10.7.
 SERVER_DOMAIN="${SERVER_DOMAIN:-airlock.lan}"
-# shoebox.lan is the name before the rename (v5.6.4), and the gateway answers
-# it with a redirect TO $SERVER_DOMAIN - set as the domain itself, every request
-# would redirect to itself for ever.
-if [[ "$SERVER_DOMAIN" == "shoebox.lan" ]]; then
-  echo "SERVER_DOMAIN=shoebox.lan is the old name; it now redirects to the new one." >&2
-  echo "Unset it (the default is airlock.lan) or set another domain." >&2
-  exit 1
-fi
 CERT_DIR="$SCRIPT_DIR/certs"
 
 BAKED_SOURCES=(Dockerfile airlock.conf.template proxy.conf)
@@ -184,13 +176,6 @@ fi
 echo "Starting $IMAGE on https://${SERVER_DOMAIN} (port ${TLS_PORT}); port ${GATEWAY_PORT} redirects"
 echo "    names: airlock.lan, backend/deepface/vision/geoloc/albums/gallery/ollama.airlock.lan"
 echo "    (run ./make-hosts.sh --check to confirm they resolve)"
-# The container was shoebox-gateway before the rename to airlock (v5.6.6).
-# --replace only replaces a container of the SAME name, so the old one would
-# keep running, keep ports 80 and 443, and this one would fail to bind them.
-# Gone once, and its image with it; a no-op on every start after.
-podman rm -f shoebox-gateway >/dev/null 2>&1 || true
-podman image rm shoebox-gateway >/dev/null 2>&1 || true
-
 podman run ${AIRLOCK_DETACH_FLAG} --rm --replace --name airlock-gateway \
   -p "${GATEWAY_PORT}:80" \
   -p "${TLS_PORT}:443" \

@@ -253,21 +253,11 @@ def test_the_pets_service_is_still_reachable_by_name():
     assert 'airlock_pets' in conf
 
 
-def test_the_old_names_still_answer():
+def test_the_old_domain_is_gone():
     """
-    shoebox.lan was the domain before the rename to airlock (v5.6.4). Every
-    service block answers its old name too, so nothing that still calls one
-    breaks; the bare old domain and its catalog subdomains redirect, so a link
-    anybody kept still opens.
+    The domain before the rename (v5.6.4) is no longer answered, redirected or
+    on the certificate (removed in v6.4.5): one name per service.
     """
-    conf = _read(GATEWAY_CONF)
-    for name in gateway_names():
-        service = name.split('.')[0]
-        if name == 'airlock.lan':
-            continue
-        assert re.search(rf'server_name {service}\.airlock\.lan {service}\.shoebox\.lan;', conf), \
-            f'{service}.shoebox.lan no longer answers'
-    assert re.search(r'server_name shoebox\.lan;\s.*?return 301 https://\$\{SERVER_DOMAIN\}\$request_uri;',
-                     conf, re.S), 'shoebox.lan does not redirect to the new domain'
-    assert 'return 301 https://$old_catalog.airlock.lan$request_uri;' in conf, \
-        'catalog subdomains of shoebox.lan do not redirect'
+    assert 'shoebox' not in _read(GATEWAY_CONF).lower()
+    certs = open(os.path.join(_HERE, 'gateway', 'make-certs.sh'), encoding='utf-8').read()
+    assert '.shoebox.lan' not in certs and '"DNS:shoebox.lan"' not in certs

@@ -4,7 +4,10 @@ Each catalog can be backed up to another machine from **Catalogs → (open the c
 Backup**. A backup is a card: where the copy goes, what it contains, when it runs, how long
 old copies are kept. From the card you can **back up now**, **verify** the backup,
 **restore** from it and **stop** a run in progress, and see at a glance whether the
-catalog is backed up. The **Dashboard** shows the same, in its *Backups* card.
+catalog is backed up. The **Dashboard** shows the same, in its *Backups* card, and the
+**Workflows** page draws each backup as a card in a *Backups* row under the workflow
+diagram, connected to nothing (backups run on their own schedule, not through the
+workflow queue): the pencil opens this tab, the play button is **Back up now**.
 
 Three kinds of backup are available, and you can use several at once:
 
@@ -141,7 +144,10 @@ The card also shows the last backup (when, and how much new data it added), the 
 scheduled run, when the backup was last **verified**, and the last restore.
 
 The **first backup** of a large catalog takes hours (about 7-8 hours for 2.7 TB over a
-1 Gb network). Later ones only send what changed, usually minutes.
+1 Gb network). Later ones only send what changed, usually minutes. On disks whose file
+identities are not stable (exFAT, FAT, NTFS, network shares, FUSE) Airlock tells restic
+(`--ignore-inode`) and borg (`--files-cache mtime,size`) to treat a file with the same
+size and modification time as unchanged, so they do not re-read everything.
 
 ---
 

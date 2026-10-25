@@ -7,9 +7,9 @@ holds only the album's pictures. It has no originals, no catalog database and no
 back into your Airlock.
 
 You do the AWS part once (§1–§3). Then Airlock does the rest: on the deployment's card,
-**Add a server**, **Set up** once, and **Publish** after each change (§3A). Sections 4–7
-are the same work by hand, for when you would rather, or when the button cannot reach
-the server.
+**Publish to AWS** to add the server, **Set up** once, and **Publish to AWS** after each
+change (§3A). Sections 4–7 are the same work by hand, for when you would rather, or when
+the button cannot reach the server.
 
 **Time:** about an hour the first time, most of it waiting for AWS and DNS.
 **Cost:** roughly US $10–20 a month for a small server (details in
@@ -22,8 +22,8 @@ the server.
 - **An AWS account**, and permission to create EC2 instances in it.
 - **A domain name** whose DNS you can change, for example `photos.example.com`.
   No domain yet? You can test with a free `sslip.io` name (§2.4).
-- **A published deployment in Airlock.** In Airlock, open **Albums → Deployments**.
-  Your deployment should list its albums. Flip the card (the image icon,
+- **A published deployment in Airlock.** In Airlock, open **Systems → Deployments**.
+  Your deployment should list its albums. Flip the card (the briefcase icon,
   *What to pack*) and check the sizes it ships. *Full resolution JPG* makes the
   gallery several times larger.
 - **A terminal on the Airlock machine**, the computer whose `catalogs/` folder
@@ -176,9 +176,10 @@ on the Airlock machine. To have the server download updates itself instead, see
 ## 3A. From here, in Airlock
 
 Owners of the catalog see this on each deployment card. Everything happens in the
-**Servers** window it opens.
+**Publish "…" to a server** window it opens.
 
-1. **Albums → Deployments**, on your deployment's card: **Add a server to publish to**.
+1. **Systems → Deployments**, on your deployment's card: **Publish to AWS** (lower right).
+   With no server yet, it opens the form to add one.
 2. Fill in the server: a name, its **host** (the Elastic IP from §1.2), **SSH user**
    `ubuntu`, the **folder** (Airlock suggests `galleries/<deployment>`), the **public
    address** (`https://photos.example.com/`) and the **gallery image** you loaded in §3
@@ -199,9 +200,12 @@ Owners of the catalog see this on each deployment card. Everything happens in th
    Docker, the ports and the space, sends the first copy, creates the session secret on
    the server, starts the gallery and checks the site. The first certificate can take a
    minute; Set up waits for it.
-6. From then on, after you change the album: **Publish** on the card. It republishes,
-   sends only what changed, removes what the album no longer has, never touches
-   `.env`, and checks the site. If it would delete many files, it asks first.
+6. From then on, after you change the album: **Publish to AWS** on the card (or
+   **Publish** in the window; **Preview** there shows what would change, sending
+   nothing). It republishes, sends only what changed, removes what the album no longer
+   has, never touches `.env`, runs `docker compose up -d` when `compose.yml` or the
+   `Caddyfile` changed, and checks the site. If it would delete many files (more than a
+   tenth of them, or over 1,000), it asks first.
 
 Airlock never asks for, or keeps, AWS credentials: the console part above stays yours.
 

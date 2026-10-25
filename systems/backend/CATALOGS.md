@@ -8,13 +8,13 @@ Source files for import workflows are served from a second mount at `/input`.
 
 | Mount | Host path | Container path |
 |---|---|---|
-| Catalog data | `/Users/izelpi/Personal/Development/shoebox/catalogs/` | `/catalogs/` |
-| Workflow input | `/Users/izelpi/Personal/Development/shoebox/in/` | `/input/` |
+| Catalog data | `<repository>/catalogs/` (`CATALOGS_HOST_DIR`) | `/catalogs/` |
+| Workflow input | `<repository>/IN/` (`INPUT_HOST_DIR`) | `/input/` |
 
 Each catalog occupies one subdirectory:
 
 ```
-/Users/izelpi/Personal/Development/shoebox/catalogs/
+<repository>/catalogs/
 ├── my-first-catalog/        ← one directory per catalog
 │   ├── workflow_results.db
 │   └── output/
@@ -44,7 +44,7 @@ When creating a catalog in the UI, set **Target Directory** to
 
 1. Create the subdirectory on the host first:
    ```bash
-   mkdir /Users/izelpi/Personal/Development/shoebox/catalogs/<catalog-name>
+   mkdir <repository>/catalogs/<catalog-name>
    ```
 2. In the UI, create a catalog with **Target Directory** set to:
    ```
@@ -55,7 +55,7 @@ When creating a catalog in the UI, set **Target Directory** to
 
 Place the files you want to import inside the host `in/` directory:
 ```
-/Users/izelpi/Personal/Development/shoebox/in/
+<repository>/IN/
 ├── photo-dump-2024/
 │   ├── IMG_0001.jpg
 │   └── IMG_0002.heic

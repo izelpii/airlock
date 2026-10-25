@@ -10,8 +10,7 @@
 #
 # Order of precedence, lowest first:
 #   1. the defaults below, derived from the repository location
-#   2. deploy/airlock.env, if it exists (per-machine, not in git) - or
-#      deploy/shoebox.env, its name before v5.6.3, which is still read
+#   2. deploy/airlock.env, if it exists (per-machine, not in git)
 #   3. environment variables already set when the script is called
 
 # Repository root: two levels up from this file, whatever it is called and
@@ -22,35 +21,10 @@ export AIRLOCK_ROOT
 # ── Per-machine overrides ─────────────────────────────────────────────────────
 # Sourced before the defaults are applied, so it can set any of them. Not in
 # git: it describes one machine.
-#
-# deploy/shoebox.env is the file's name before the rename to airlock (v5.6.3).
-# It is read first and airlock.env after it, so where both set a value the new
-# file wins, and a machine that has not renamed its file keeps working.
-for _env_file in "$AIRLOCK_ROOT/deploy/shoebox.env" "$AIRLOCK_ROOT/deploy/airlock.env"; do
-  if [[ -f "$_env_file" ]]; then
-    # shellcheck disable=SC1090
-    source "$_env_file"
-  fi
-done
-unset _env_file
-
-# The variables were SHOEBOX_* before v5.6.3. One set under the old name - in
-# an old env file, or exported by a habit - still counts, unless its AIRLOCK_
-# name is set too. Said once per run, not once per service. Remove in v5.7.
-_airlock_renamed=""
-for _old in $(compgen -v SHOEBOX_); do
-  _new="AIRLOCK_${_old#SHOEBOX_}"
-  if [[ -z "${!_new+x}" ]]; then
-    export "$_new=${!_old}"
-    _airlock_renamed="$_airlock_renamed $_old"
-  fi
-done
-if [[ -n "$_airlock_renamed" && -z "${AIRLOCK_RENAME_NOTED:-}" ]]; then
-  echo "note: read under their old names, now AIRLOCK_*:$_airlock_renamed" >&2
-  echo "      rename them in deploy/airlock.env (deploy/shoebox.env is still read)" >&2
-  export AIRLOCK_RENAME_NOTED=1
+if [[ -f "$AIRLOCK_ROOT/deploy/airlock.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$AIRLOCK_ROOT/deploy/airlock.env"
 fi
-unset _old _new _airlock_renamed
 
 # ── Host paths ────────────────────────────────────────────────────────────────
 # Catalogs: every catalog directory, the derivatives, albums, deployments and
@@ -193,7 +167,7 @@ export AIRLOCK_USERNS
 # this costs one container run per machine, not one per service start.
 _container_default_route() {
   local img
-  for img in airlock-gateway shoebox-gateway workflow-backend backend-geoloc alpine; do
+  for img in airlock-gateway workflow-backend backend-geoloc alpine; do
     podman image exists "$img" 2>/dev/null || continue
     podman run --rm --entrypoint sh "$img" -c \
       "ip route 2>/dev/null | awk '/^default/ {print \$3; exit}'" 2>/dev/null \
@@ -245,8 +219,7 @@ if [[ -z "${AIRLOCK_HOST_ALIAS+x}" ]]; then
     done
     if [[ -n "$AIRLOCK_HOST_ALIAS" ]]; then
       if [[ -w "$AIRLOCK_ROOT/deploy" ]] \
-         && ! grep -q '^AIRLOCK_HOST_IP=' "$AIRLOCK_ROOT/deploy/airlock.env" 2>/dev/null \
-         && ! grep -q '^SHOEBOX_HOST_IP=' "$AIRLOCK_ROOT/deploy/shoebox.env" 2>/dev/null; then
+         && ! grep -q '^AIRLOCK_HOST_IP=' "$AIRLOCK_ROOT/deploy/airlock.env" 2>/dev/null; then
         echo "AIRLOCK_HOST_IP=$AIRLOCK_HOST_ALIAS" >> "$AIRLOCK_ROOT/deploy/airlock.env" 2>/dev/null || true
       fi
     else
@@ -295,8 +268,7 @@ export AIRLOCK_HOST_ALIAS
 # are debugging a rejected Origin, the answer is almost certainly in
 # _origin_allowed(), not in this block.
 if [[ -z "${AIRLOCK_ALLOWED_ORIGINS+x}" ]]; then
-  # shoebox.lan: the name before the rename (v5.6.4), until v5.7.
-  _origins="https://airlock.lan,http://airlock.lan,https://shoebox.lan,http://shoebox.lan,http://localhost:3000,http://localhost:5000"
+  _origins="https://airlock.lan,http://airlock.lan,http://localhost:3000,http://localhost:5000"
   for _addr in "${AIRLOCK_HOST_IP:-}" "$(_host_lan_ip || true)" "$(hostname -s 2>/dev/null || true)"; do
     [[ -n "$_addr" ]] || continue
     case ",$_origins," in *",https://$_addr,"*) continue ;; esac

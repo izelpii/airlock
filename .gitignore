@@ -169,8 +169,6 @@ systems/backend/database/
 
 # Per-machine deployment settings (see deploy/airlock.env.example)
 deploy/airlock.env
-# ...and its name before v5.6.3, still read and still never committed.
-deploy/shoebox.env
 
 # A copy's own license (license/README.md): belongs to the install, not the source.
 license/*.license
