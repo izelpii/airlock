@@ -138,3 +138,27 @@ test('without a server the button opens the window to add one', async () => {
   expect(opened).toEqual([[null]]);
   act(() => root.unmount());
 });
+
+test('Cancel closes the window when there is no server yet, and goes back when there is', async () => {
+  let closed = 0;
+  const { root, text, button, click } = await mount(
+    <ServersModal catalogId={7} deployment={DEPLOYMENT} visible onClose={() => { closed += 1; }} />,
+  );
+  await click(button('Cancel'));
+  expect(closed).toBe(1);
+  act(() => root.unmount());
+
+  mockState.servers = [{ id: 5, name: 'EC2', host: '203.0.113.10', port: 22, ssh_user: 'ubuntu',
+    remote_dir: 'galleries/album2026', public_url: 'https://photos.example.com/',
+    host_key: 'SHA256:abc', last_run: null }];
+  const second = await mount(
+    <ServersModal catalogId={7} deployment={DEPLOYMENT} visible onClose={() => { closed += 1; }} />,
+  );
+  await second.click(second.button('+ Add a server'));
+  expect(second.text()).toContain('The server must already exist');
+  await second.click(second.button('Cancel'));
+  expect(closed).toBe(1);
+  expect(second.text()).not.toContain('The server must already exist');
+  expect(second.button('Publish')).toBeDefined();
+  act(() => second.root.unmount());
+});

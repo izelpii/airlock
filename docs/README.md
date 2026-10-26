@@ -5,6 +5,9 @@ is, how to run it, and its configuration.
 
 ## Getting started
 
+- [Installation](guides/INSTALLATION.md) — step by step, with a page each for
+  [Linux x64](guides/INSTALL_LINUX_X64.md), [Mac (Apple Silicon)](guides/INSTALL_MAC_ARM.md),
+  [Mac (Intel)](guides/INSTALL_MAC_INTEL.md) and [Raspberry Pi](guides/INSTALL_RASPBERRY_PI.md)
 - [Quick start](guides/QUICKSTART.md) — the shortest path to a running instance
 - [Startup guide](guides/STARTUP_GUIDE.md) — every service, and how they start
 

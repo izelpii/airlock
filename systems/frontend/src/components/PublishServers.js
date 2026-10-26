@@ -524,7 +524,10 @@ export const ServersModal = ({ catalogId, deployment, visible, focusServer, star
               </div>
             )}
             <ServerForm initial={mode === 'edit' ? server : null} deployment={deployment}
-                        onSave={save} onCancel={() => setMode(servers.length ? null : 'add')}
+                        onSave={save}
+                        // With no server yet the form is all the window shows, so
+                        // Cancel closes it rather than leave it where it is.
+                        onCancel={() => (servers.length ? setMode(null) : onClose())}
                         saving={saving} error={error} />
           </>
         )}

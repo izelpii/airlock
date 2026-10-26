@@ -14,7 +14,8 @@ On the host you need:
   AirDrop & Handoff). It listens on port 5000, which the backend needs; with it
   on, the backend cannot start. `start-all.sh` stops and says so.
 
-See the Prerequisites section of the [README](../../README.md) for the details.
+See the Prerequisites section of the [README](../../README.md) for the details, and the
+[Installation guide](INSTALLATION.md) for every step explained, per platform.
 
 ## Quick Start (Automated)
 

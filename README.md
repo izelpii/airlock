@@ -32,9 +32,11 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
 ## Features
 
 ### Accounts
-- **Sign-in over HTTPS** — Every page and API call needs a session; the first run creates the owner account
-- **Users and roles** — Viewer, editor and owner, granted per catalog; managed on the Users page or with `systems/backend/manage_users.py`
-- **Account pages** — Each account has its own page (profile, linked person, password, signed-in devices), opened from your name in the top bar or from Users
+- **Sign-in over HTTPS** — Every page and API call needs a session. A new installation has no account and no default password: the first visit creates the administrator account
+- **Users and roles** — Viewer, editor and owner, granted per catalog. Owners alone share, rename or delete a catalog, set album passwords, publish to a server and change backups. Administrators manage accounts, on the Users page or with `systems/backend/manage_users.py`, which is also the way back in if you are locked out
+- **Sharing** — An owner shares a catalog from the Catalogs page, at a chosen role; a catalog always keeps at least one owner
+- **Account pages** — Each account has its own page (profile, linked person, password, signed-in devices), opened from your name in the top bar or from Users. An administrator can set another account's password, which that person must change at their next sign-in
+- **Sessions** — Server-side, 30 days, revoked at once by signing out, a password change, deactivation or "sign out everywhere"; repeated failed sign-ins are locked out for a while
 
 ### Catalogs, Import and Storage
 - **Multi-catalog support** — Each catalog has its own folder and SQLite database, with paths stored relative to it so it can be moved
@@ -150,7 +152,8 @@ See `docs/specs/redesign-ports-routes-spec.md`.
 ## Prerequisites
 
 Almost everything runs in a container and brings its own dependencies. This
-table is the short list of what has to be on the **host** itself.
+table is the short list of what has to be on the **host** itself; the
+[Installation guide](docs/guides/INSTALLATION.md) has the commands for each platform.
 
 | Dependency | Minimum Version | Purpose |
 |---|---|---|
@@ -222,6 +225,15 @@ ollama serve
 ---
 
 ## Quick Start
+
+> **Installing for the first time?** Follow the step-by-step
+> [Installation guide](docs/guides/INSTALLATION.md): prerequisites,
+> each step explained, and troubleshooting, with a page for each platform:
+> [Linux x64](docs/guides/INSTALL_LINUX_X64.md) ·
+> [Mac (Apple Silicon)](docs/guides/INSTALL_MAC_ARM.md) ·
+> [Mac (Intel)](docs/guides/INSTALL_MAC_INTEL.md) ·
+> [Raspberry Pi](docs/guides/INSTALL_RASPBERRY_PI.md).
+> This section is the short version.
 
 **On a machine that has run this before:**
 
@@ -430,7 +442,9 @@ the pipeline.
 The backend serves about 270 routes under `/api/`, reached at
 `https://airlock.lan/api/…`. Every route needs a signed-in session except
 `/api/auth/login`, `/api/auth/session`, `/api/auth/setup` and
-`/api/auth/setup-required`.
+`/api/auth/setup-required`. A `401` means not signed in, and a `403` means
+signed in without the role the catalog route needs. See
+[User Authentication](docs/specs/user-authentication-spec.md#7-api).
 
 | Area | Routes |
 |---|---|
@@ -497,9 +511,10 @@ rename them in `deploy/airlock.env`.
 
 | Setting | Effect |
 |---|---|
-| `AIRLOCK_AUTH_REQUIRED` | Sign-in required (default `1`) |
+| `AIRLOCK_AUTH_REQUIRED` | Sign-in required (default `1`; `0` is for development only) |
+| `AIRLOCK_SECRET_KEY` | The session secret; unset, one is generated once and kept in `database/secret_key` |
 | `AIRLOCK_DEEPFACE_MODE`, `AIRLOCK_TRANSCODE_MODE` | `auto`, `host`, `container`, `gpu` or `off` |
-| `AIRLOCK_ALLOWED_ORIGINS` | Extra origins the backend accepts |
+| `AIRLOCK_ALLOWED_ORIGINS` | Browser origins the backend accepts, beyond the address a page was loaded from; set only for a DNS name or a reverse proxy |
 | `OLLAMA_MODEL`, `ALBUMS_LLM_MODEL` | Models for descriptions and album prompts |
 | `NIGHTLY_LEARNING_AT`, `NIGHTLY_LEARNING_TZ` | When a face tag's Match Faces by Appearance runs (default `03:00`, `America/New_York`) |
 
@@ -631,12 +646,13 @@ Full documentation is in the [`docs/`](docs) directory:
 | [Architecture](docs/architecture/ARCHITECTURE.md) | Services, gateway, data and workflows |
 | [Technology Stack](docs/architecture/TECHNOLOGY_STACK.md) | Technologies and versions |
 | [Information Flow](docs/architecture/INFORMATION_FLOW.md) | How requests, imports, faces, pets and albums flow |
+| [Installation](docs/guides/INSTALLATION.md) | Installing step by step, per platform, with troubleshooting |
 | [Deploy README](deploy/README.md) | Preparing a machine, `airlock.env`, rootless podman |
 | [Startup Guide](docs/guides/STARTUP_GUIDE.md) | Starting and managing services |
 | [Quick Start](docs/guides/QUICKSTART.md) | Step-by-step first run |
 | [Accelerated Services](docs/specs/accelerated-services-spec.md) | Native, container and GPU modes |
 | [Ports and Routes](docs/specs/redesign-ports-routes-spec.md) | The gateway and service names |
-| [User Authentication](docs/specs/user-authentication-spec.md) | Accounts, roles, sessions |
+| [User Authentication](docs/specs/user-authentication-spec.md) | Accounts, roles and sharing, sessions, the way back in, HTTPS and certificates |
 | [Ingestion Architecture](docs/features/ingestion-architecture.md) | How the streaming import works |
 | [Pet Recognition](docs/specs/pet-recognition-spec.md) | Pets: models, thresholds, design |
 | [Name Migration](docs/specs/name-migration-spec.md) | The Shoebox → Airlock Photos rename, and how its fallbacks were retired |
