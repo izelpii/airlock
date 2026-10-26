@@ -14,6 +14,8 @@ such as added documentation; it counts from the release it sits on.
 
 ## 6.5
 
+- **v6.5.5.1** (2026-10-26) — An introduction for people new to Airlock
+- **v6.5.5** (2026-10-26) — The catalog form names its Import Mode
 - **v6.5.4.1** (2026-10-26) — The history before v4, in detail; a fourth version number
 - **v6.5.4** (2026-10-26) — The history goes back to 2005
 - **v6.5.3** (2026-10-26) — Copyright from 2005

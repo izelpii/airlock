@@ -10,23 +10,53 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
 
 ## Table of Contents
 
-1. [Features](#features)
-2. [Architecture Overview](#architecture-overview)
-3. [Service Endpoints](#service-endpoints)
-4. [Prerequisites](#prerequisites)
-5. [Installation](#installation)
-6. [Quick Start](#quick-start)
-7. [Running One Service](#running-one-service)
-8. [Project Structure](#project-structure)
-9. [Workflows](#workflows)
-10. [Key UI Features](#key-ui-features)
-11. [API Overview](#api-overview)
-12. [Database Design](#database-design)
-13. [Configuration](#configuration)
-14. [Packing an Album for Elsewhere](#packing-an-album-for-elsewhere)
-15. [Sending an Album to Someone Without Airlock](#sending-an-album-to-someone-without-airlock)
-16. [Development Notes](#development-notes)
-17. [Documentation](#documentation)
+1. [Introduction](#introduction)
+2. [Features](#features)
+3. [Architecture Overview](#architecture-overview)
+4. [Service Endpoints](#service-endpoints)
+5. [Prerequisites](#prerequisites)
+6. [Installation](#installation)
+7. [Quick Start](#quick-start)
+8. [Running One Service](#running-one-service)
+9. [Project Structure](#project-structure)
+10. [Workflows](#workflows)
+11. [Key UI Features](#key-ui-features)
+12. [API Overview](#api-overview)
+13. [Database Design](#database-design)
+14. [Configuration](#configuration)
+15. [Packing an Album for Elsewhere](#packing-an-album-for-elsewhere)
+16. [Sending an Album to Someone Without Airlock](#sending-an-album-to-someone-without-airlock)
+17. [Development Notes](#development-notes)
+18. [Documentation](#documentation)
+
+---
+
+## Introduction
+
+Airlock brings the photos and videos scattered across phones, cameras, memory
+cards and old drives into one organised library, on a computer you control.
+It keeps four jobs apart: **storing** the files, **organising** them by date
+and event, **learning** what is in them (when, where, who, which pets), and
+**publishing** chosen photos as albums. Recognition and descriptions run on
+your own machine, and photos leave it only when you publish or send an album.
+It began in 2005 as a Perl script, and became one application in 2026.
+
+The ideas the application is built on:
+
+- **Catalog**: one collection, such as Family or Work. It holds the media and everything known about it, in one folder of its own. You work in one catalog at a time, and an owner can share it with other accounts as viewer, editor or owner.
+- **Import Mode**: how a catalog treats your originals, chosen when it is created:
+  - **index them where they are**, read only;
+  - **copy them in**, renamed by date;
+  - **move them in**, so the catalog keeps the master copy, and duplicates go to a `DUPS` folder.
+- **Storage route**: a folder the catalog imports from. Adding one creates its Import workflow.
+- **Workflows**: the steps after an import, chained automatically: events, places, faces and pets.
+- **Dates**: taken from the photo's metadata first, then from its folder, its file name and, last, the filesystem.
+- **Events**: photos taken close together, grouped automatically and named by you. The names become album sections.
+- **Albums**: a grouping that points at photos and never copies them, so deleting an album deletes no photo. The year template builds one from a year's events.
+- **Sharing albums**: as a gallery on your network, optionally with a password; published to a server of your own; or sent to someone with a one-time code.
+
+The full explanation, with the history and each concept in depth, is in
+**[Introducing Airlock Photos](docs/guides/INTRODUCTION.md)**.
 
 ---
 
@@ -666,6 +696,7 @@ Full documentation is in the [`docs/`](docs) directory:
 | [Architecture](docs/architecture/ARCHITECTURE.md) | Services, gateway, data and workflows |
 | [Technology Stack](docs/architecture/TECHNOLOGY_STACK.md) | Technologies and versions |
 | [Information Flow](docs/architecture/INFORMATION_FLOW.md) | How requests, imports, faces, pets and albums flow |
+| [Introduction](docs/guides/INTRODUCTION.md) | What Airlock is for, its history, and the key concepts |
 | [Installation](docs/guides/INSTALLATION.md) | Installing step by step, per platform, with troubleshooting |
 | [Deploy README](deploy/README.md) | Preparing a machine, `airlock.env`, rootless podman |
 | [Startup Guide](docs/guides/STARTUP_GUIDE.md) | Starting and managing services |

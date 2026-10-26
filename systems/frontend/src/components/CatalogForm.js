@@ -596,6 +596,8 @@ const CatalogForm = ({ visible, onClose, catalog, onSuccess }) => {
               relative to the root the catalog was created with, so changing the
               mode later would make them resolve against the wrong one. */}
           <div className="mb-3">
+            {/* The setting's name, so the documentation can refer to it. */}
+            <div className="fw-bold mb-1">Import Mode</div>
             <CFormLabel>How should this catalog handle your files? *</CFormLabel>
             <CFormCheck
               type="radio"

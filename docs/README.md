@@ -5,6 +5,7 @@ is, how to run it, and its configuration.
 
 ## Getting started
 
+- [Introduction](guides/INTRODUCTION.md) — what Airlock is for, its history, and the key concepts
 - [Installation](guides/INSTALLATION.md) — step by step, with a page each for
   [Linux x64](guides/INSTALL_LINUX_X64.md), [Mac (Apple Silicon)](guides/INSTALL_MAC_ARM.md),
   [Mac (Intel)](guides/INSTALL_MAC_INTEL.md) and [Raspberry Pi](guides/INSTALL_RASPBERRY_PI.md)
