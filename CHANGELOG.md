@@ -6,12 +6,15 @@ the release brought. Every public release is a commit and a tag here
 `GET /api/version` and beside the logo.
 
 Version numbers: the **minor** advances when Airlock gains a capability it did
-not have, the **patch** with every other change, and the **major** when enough
-has accumulated that it is a different product.
+not have, the **patch** with a fix or any other change to what it does, and the
+**major** when enough has accumulated that it is a different product. A
+**fourth number** (`6.5.4.1`) marks a change that alters nothing Airlock does,
+such as added documentation; it counts from the release it sits on.
 
 
 ## 6.5
 
+- **v6.5.4.1** (2026-10-26) — The history before v4, in detail; a fourth version number
 - **v6.5.4** (2026-10-26) — The history goes back to 2005
 - **v6.5.3** (2026-10-26) — Copyright from 2005
 - **v6.5.2** (2026-10-26) — The README has an Installation section
@@ -220,6 +223,6 @@ has accumulated that it is a different product.
 
 ## Before this repository
 
-- **v3** (2017) — Workflows in the UI
-- **v2** (2011) — A first UI
-- **v1** (2005) — A script: Perl, then bash and Python
+- **v3** (2017) — An AdminLTE UI; photos organised by year
+- **v2** (2011) — A first UI, in HTML and PHP
+- **v1** (2005) — A script: Perl, then bash and Perl, then Python

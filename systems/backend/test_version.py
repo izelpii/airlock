@@ -36,8 +36,10 @@ def test_the_repository_declares_a_version():
         declared = fh.read().strip()
     assert declared, 'VERSION must not be empty'
     parts = declared.split('.')
-    assert len(parts) == 3 and all(p.isdigit() for p in parts), \
-        f'expected MAJOR.MINOR.PATCH, got {declared!r}'
+    # A fourth number marks a commit that changes nothing Airlock does
+    # (CHANGELOG.md, "What moves which number"): 6.5.4.1.
+    assert len(parts) in (3, 4) and all(p.isdigit() for p in parts), \
+        f'expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH.NOTE, got {declared!r}'
 
 
 def test_it_reads_the_file_in_a_checkout():
@@ -136,7 +138,7 @@ def test_the_dockerfile_takes_the_version_as_a_build_argument():
 
 def test_version_is_the_newest_tag_so_no_commit_is_unversioned():
     """
-    Every commit advances the patch (CHANGELOG.md, "What moves which number"),
+    Every commit is versioned and tagged (CHANGELOG.md, "What moves which number"),
     so VERSION must name the NEWEST tag - not merely some tag that exists.
 
     What this catches: a commit that forgot to bump. The test above is happy
@@ -157,4 +159,5 @@ def test_version_is_the_newest_tag_so_no_commit_is_unversioned():
     newest = out.stdout.split()[0]
     assert newest == f'v{declared}', (
         f'VERSION says {declared} but the newest tag is {newest}. Every commit '
-        f'takes the next patch and is tagged; a capability takes the next minor.')
+        f'is tagged: a fix takes the next patch, a capability the next minor, '
+        f'and a documentation-only change a fourth number (6.5.4.1).')

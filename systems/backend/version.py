@@ -23,10 +23,12 @@ moved past the release, which is the thing worth knowing day to day:
     5.0.0              an exact release
     5.0.0+12.abc1234   12 commits past it
 
-What the three numbers mean is in CHANGELOG.md, under "What moves which
-number", and the short version is: EVERY COMMIT ADVANCES THE PATCH and is
-tagged, a new capability advances the minor, and the major is reserved for
-enough accumulated capability to be a different product. A `+N` suffix here
+What the numbers mean is in CHANGELOG.md, under "What moves which number",
+and the short version is: EVERY COMMIT IS VERSIONED AND TAGGED. A fix or any
+other change to behaviour advances the patch, a new capability the minor, and
+the major is reserved for enough accumulated capability to be a different
+product. A commit that changes nothing Airlock does - documentation, wording -
+takes a fourth number on the release it sits on: 6.5.4.1. A `+N` suffix here
 therefore means N commits that have not been versioned yet, which should
 normally be zero.
 

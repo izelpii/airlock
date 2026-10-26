@@ -358,7 +358,7 @@ npm start
 ```
 airlock/
 ├── start-all.sh / stop-all.sh    ← Start or stop the whole stack
-├── VERSION, CHANGELOG.md         ← Version and release notes (every commit is a tagged patch)
+├── VERSION, CHANGELOG.md         ← Version and release notes (every commit is tagged: see "What moves which number")
 ├── deploy/                       ← Per-machine setup (see deploy/README.md)
 │   ├── deploy.sh                 ← Prepare a host; --check reports only
 │   ├── airlock-env.sh            ← Shared settings and service-mode logic

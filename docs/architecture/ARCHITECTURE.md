@@ -545,10 +545,10 @@ deleted from the source — only after the database commit. Duplicates go to
 
 | Version | Change | Where it shows up here |
 |---|---|---|
-| v1 | Script only: Perl (2005), then bash/Perl (2007), then bash/Python (around 2010) | copy files, deduplicate, organize by date. First script 2005 |
-| v2 | Complete redesign, barebones UI | UI monitoring copy, organization 2011 |
-| v3 | UI redesign, workflows working on UI, based on AdminLTE  | Scripting, UI and worfklows tied together 2017|
-| v4.0 | UI redesign using react, adopting version control with github | Script control, UI, minor deduplication enhancements |
+| v1 | Script only: Perl (2005), bash and Perl with a Perl de-duplication script (2007), rewritten in Python (2010) | copy files, deduplicate, organize by date. A bug around 2010 touched every file and lost most creation dates; since then the scripts preserve origination and modification dates |
+| v2 | A first UI, in HTML and PHP (2011) | following the copy and organisation; rarely used, as the scripts did the work |
+| v3 | UI rewritten on AdminLTE (2017) | still barely connected to the scripts, which now organised photos by year |
+| v4.0 | UI rewritten completely in React (2026), the workflows organised as scripts the UI runs; version control adopted, with GitHub | Script control, UI, minor deduplication enhancements |
 | v4.1 | Sign-in, users, SSL gateway, migration to gitea | Gateway, Authentication |
 | v4.2 | Storage routes | Files on disk |
 | v4.3 | Video, transcoded for the browser | `backend-transcode` |
