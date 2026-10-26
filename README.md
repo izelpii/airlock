@@ -386,7 +386,7 @@ The scripts are bind-mounted: editing one needs no image rebuild.
 
 | Workflow | Script | What it does |
 |---|---|---|
-| Import Files | `io_picture_import_v2_workflow.py` | Streaming import from a storage route: one read per file, copy/reference/move, derivatives in the background. Created per storage route |
+| Import Files | `io_picture_import_v2_workflow.py` | Streaming import from a storage route: one read per file, copy/reference/move, derivatives in the background. Created per storage route, plus one **Import transfers** per catalog for received albums |
 | Legacy Two-Stage Import | `io_picture_import_workflow.py` | The earlier import, kept selectable |
 | Create Events | `ev_extract_events.py` | Groups photos into events by time gaps |
 | Extract Locations | `ge_extract_locations.py` | Clusters coordinates into proposed locations |

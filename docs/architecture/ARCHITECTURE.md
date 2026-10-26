@@ -280,7 +280,11 @@ backups run on their own schedule, never through the queue (v6.3.2).
 | 80 | `pe_identify_pets.py` | Measure and Match Pets (pets only) |
 | 90 | `pe_cluster_pets.py` | Group Unnamed Pets (pets only) |
 
-Import workflows are created per storage route rather than seeded.
+Import workflows are created per storage route rather than seeded, and every
+catalog also always has **Import transfers**: an Import workflow reading its
+own `transfers/`, started when an album transfer completes. It copies whatever
+the catalog's mode, and moves each imported album to `transfers/consumed/`
+(`documentation/features/transfers-import.md`).
 `ai_ml_faces_recognition_workflow.py` (Match Faces Within Events) is retired and
 removed from catalogs automatically (v5.5.3); `workflows/legacy/` holds older
 scripts.

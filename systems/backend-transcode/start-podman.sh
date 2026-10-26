@@ -63,9 +63,20 @@ if [[ "$AIRLOCK_OS" == "Linux" && "${AIRLOCK_GPU:-0}" != "1" ]]; then
   if [[ -e /dev/video11 ]]; then
     DEVICE_FLAGS+=(--device /dev/video11)
   fi
-  if (( ${#DEVICE_FLAGS[@]} )) \
-     && [[ "$(podman info --format '{{.Host.OCIRuntime.Name}}' 2>/dev/null)" == "crun" ]]; then
-    DEVICE_FLAGS+=(--group-add keep-groups)
+  # keep-groups also needs podman 3.2 or newer. Older podman reads it as the
+  # NAME of a group, finds none, and refuses to start the container at all
+  # ("Unable to find group keep-groups" - podman 3.0.1 on Debian 11, a Pi 4).
+  # There the device is still passed: the start-up probe finds whether it can
+  # be opened, and encodes in software if not.
+  if (( ${#DEVICE_FLAGS[@]} )); then
+    if [[ "$(podman info --format '{{.Host.OCIRuntime.Name}}' 2>/dev/null || true)" == "crun" ]] \
+       && _version_at_least "${PODMAN_VERSION:-0}" 3.2; then
+      DEVICE_FLAGS+=(--group-add keep-groups)
+    else
+      echo "  note: podman ${PODMAN_VERSION:-?} cannot share this user's video group with the"
+      echo "        container (keep-groups needs podman 3.2+ with crun); if the encoder"
+      echo "        cannot be opened, video previews are encoded in software instead"
+    fi
   fi
 fi
 

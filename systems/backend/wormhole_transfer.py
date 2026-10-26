@@ -368,7 +368,8 @@ def slugify(name):
 # ── launching, and the watcher that turns events into state ───────────────────
 
 def launch(catalog_db, transfer_id, mode, emit, manifest=None, code=None,
-           destination=None, scratch_dir=None, state_dir=None, expires_file=None):
+           destination=None, scratch_dir=None, state_dir=None, expires_file=None,
+           on_completed=None):
     """
     Start the runner and the thread that reads it.
 
@@ -378,6 +379,9 @@ def launch(catalog_db, transfer_id, mode, emit, manifest=None, code=None,
     Returns the pid. Like a workflow's, the pid is stored rather than held: the
     backend may be replaced while a transfer keeps going, and a value in the
     database survives that where an object in memory does not.
+
+    `on_completed(transfer_id)` is called once the transfer ends `completed` -
+    for a receive, app.py queues the catalog's transfers import with it.
     """
     cmd = [sys.executable, '-u', RUNNER, '--mode', mode,
            '--transfer-id', str(transfer_id)]
@@ -401,13 +405,14 @@ def launch(catalog_db, transfer_id, mode, emit, manifest=None, code=None,
     update(catalog_db, transfer_id, pid=proc.pid, status='waiting_peer')
 
     thread = threading.Thread(
-        target=_watch, args=(catalog_db, transfer_id, proc, emit, manifest_path),
+        target=_watch, args=(catalog_db, transfer_id, proc, emit, manifest_path,
+                             on_completed),
         daemon=True)
     thread.start()
     return proc.pid
 
 
-def _watch(catalog_db, transfer_id, proc, emit, manifest_path):
+def _watch(catalog_db, transfer_id, proc, emit, manifest_path, on_completed=None):
     """
     Read the runner's events, keep the database current, mirror to the browser.
 
@@ -593,6 +598,12 @@ def _watch(catalog_db, transfer_id, proc, emit, manifest_path):
            completed_at=datetime.now().isoformat(' ', 'seconds'))
     _emit(emit, 'transfer_done', {'transfer_id': transfer_id,
                                   'status': final, 'error': error_message})
+    if final == 'completed' and on_completed is not None:
+        try:
+            on_completed(transfer_id)
+        except Exception as exc:                   # pragma: no cover
+            print(f'[wormhole {transfer_id}] after-completion step failed: {exc}',
+                  flush=True)
 
 
 def _receive_manifest(catalog_db, transfer_id, ev):

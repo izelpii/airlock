@@ -549,6 +549,7 @@ def get_workflow_graph(catalog_id):
     # workflow somebody deleted on purpose is not put back. See
     # workflow_defaults.sync_default_workflows.
     workflow_defaults.sync_default_workflows(catalog_db)
+    _ensure_transfers_import_workflow(catalog, catalog_db)
 
     conn = catalog_db.get_connection()
     try:
@@ -639,6 +640,7 @@ def get_workflows(catalog_id):
     # created has to arrive on its own, because nothing would report its
     # absence. Watermarked, so a deliberate deletion stays deleted.
     workflow_defaults.sync_default_workflows(catalog_db)
+    _ensure_transfers_import_workflow(catalog, catalog_db)
     workflows = wm.get_all()
     # Inject catalog_id so the frontend field stays compatible
     for wf in workflows:
@@ -1000,6 +1002,8 @@ def start_workflow_execution(catalog, workflow, source_directory=None):
             # reports success (spec section 6.5.2).
             if route_id:
                 cmd += ['--route-id', str(route_id)]
+            if _is_transfers_import(catalog, workflow):
+                cmd += ['--transfers']
         proc = subprocess.Popen(cmd, close_fds=True)
         # The pid is the only handle anything has on a running workflow. It is
         # stored, not held: the backend may be replaced while the workflow keeps
@@ -1708,6 +1712,96 @@ def _create_import_workflow_for_route(catalog, route_name, route_id):
     return {'id': workflow_id, 'name': f'Import {route_name}'}
 
 
+# ── The transfers import: one per catalog, always ────────────────────────────
+#
+# Albums received from another Airlock land in <catalog>/transfers/
+# (wormhole_transfer.transfers_root). Every catalog has one Import workflow that
+# reads that folder - "Import transfers" - created with the catalog and put back
+# whenever the Workflows page finds it missing, so it is on the canvas beside
+# the route imports and wired into the pipeline exactly like them (the graph's
+# edges are per script). A completed receive queues it (_queue_transfers_import).
+#
+# It is recognised by its source, not its name: a literal source_directory equal
+# to this catalog's transfers root, with no storage route. It runs with
+# --transfers, which copies whatever the catalog's ingest mode, skips consumed/,
+# and moves each imported album into transfers/consumed/
+# (documentation/features/transfers-import.md).
+TRANSFERS_WORKFLOW_NAME = 'Import transfers'
+TRANSFERS_WORKFLOW_DESCRIPTION = (
+    'Imports the albums other Airlock installs send to this catalog '
+    '(Albums > Transfers > Receiving). Runs by itself when a transfer completes; '
+    'each imported album then moves to transfers/consumed/.')
+_transfers_workflow_lock = threading.Lock()
+
+
+def _is_transfers_import(catalog, workflow):
+    """True for this catalog's transfers import (by its source, not its name)."""
+    src = (workflow.get('source_directory') or '').strip()
+    if not src or workflow.get('source_route_id') or not catalog.target_directory:
+        return False
+    return (os.path.normpath(src)
+            == os.path.normpath(wormhole_transfer.transfers_root(catalog)))
+
+
+def _ensure_transfers_import_workflow(catalog, catalog_db=None):
+    """
+    This catalog's "Import transfers" workflow, created when it is missing.
+
+    Always present: deleting it only lasts until the Workflows page is next
+    opened, because a catalog that can receive albums needs a way to import
+    them. Also makes transfers/ itself, so the card never fails on a folder
+    that does not exist yet. Returns the workflow row, or None if the catalog
+    has no directory. Under a lock: the Workflows page asks for its list and
+    its graph at once, and both come here.
+    """
+    if not catalog or not catalog.target_directory:
+        return None
+    root = wormhole_transfer.transfers_root(catalog)
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError as exc:
+        print(f'[transfers] could not create {root}: {exc}')
+    catalog_db = catalog_db or CatalogDatabase(catalog.target_directory)
+    with _transfers_workflow_lock:
+        conn = catalog_db.get_connection()
+        try:
+            rows = [dict(r) for r in conn.execute('SELECT * FROM workflows ORDER BY id')]
+        finally:
+            conn.close()
+        for r in rows:
+            if _is_transfers_import(catalog, r):
+                return r
+        model = WorkflowModel(catalog_db)
+        entry = workflow_defaults.manifest_by_script().get(INGEST_SCRIPT) or {}
+        workflow_id = model.create(
+            name=TRANSFERS_WORKFLOW_NAME,
+            description=TRANSFERS_WORKFLOW_DESCRIPTION,
+            source_directory=root,
+            python_script=f'workflows/{INGEST_SCRIPT}',
+            workflow_type=entry.get('type') or 'Import',
+        )
+        print(f'[catalog {catalog.id}] created "{TRANSFERS_WORKFLOW_NAME}" for {root}')
+        return model.get_by_id(workflow_id)
+
+
+def _queue_transfers_import(catalog, transfer_id):
+    """A receive completed: queue this catalog's transfers import."""
+    try:
+        catalog = Catalog.get_by_id(catalog.id) or catalog
+        workflow = _ensure_transfers_import_workflow(catalog)
+        if not workflow:
+            return
+        catalog_db = CatalogDatabase(catalog.target_directory)
+        queue_id, created = workflow_scheduler.enqueue(
+            catalog_db.db_path, workflow, trigger_source='transfer_received',
+            trigger_detail={'transfer_id': transfer_id})
+        print(f'[transfers] transfer {transfer_id} received -> "{workflow["name"]}" '
+              f'{"queued" if created else "already queued"} (queue {queue_id})')
+        _emit_queue(catalog)
+    except Exception as exc:
+        print(f'[transfers] could not queue the import for transfer {transfer_id}: {exc}')
+
+
 @app.route('/api/storage-routes/<int:route_id>', methods=['PUT'])
 @auth.admin_required
 def update_storage_route(route_id):
@@ -2142,6 +2236,7 @@ def create_catalog():
             seeded = workflow_defaults.seed_default_workflows(catalog_db)
             print(f"[catalog {catalog_id}] seeded workflows: "
                   f"{', '.join(seeded['created']) or 'none'}")
+            _ensure_transfers_import_workflow(catalog, catalog_db)
 
             # Pets, ON unless the caller said otherwise.
             #
@@ -18343,7 +18438,8 @@ def start_receive_transfer(catalog_id):
     state_dir = wormhole_transfer.transfer_state_dir(catalog, transfer_id)
     wormhole_transfer.launch(catalog_db, transfer_id, 'receive', socketio.emit,
                              code=code, destination=destination,
-                             state_dir=state_dir)
+                             state_dir=state_dir,
+                             on_completed=lambda tid: _queue_transfers_import(catalog, tid))
     return jsonify({'transfer_id': transfer_id,
                     'destination': destination}), 201
 
@@ -18451,7 +18547,8 @@ def resume_album_transfer(catalog_id, transfer_id):
                                  socketio.emit, code=code,
                                  destination=row['destination'],
                                  state_dir=wormhole_transfer.transfer_state_dir(
-                                     catalog, transfer_id))
+                                     catalog, transfer_id),
+                                 on_completed=lambda tid: _queue_transfers_import(catalog, tid))
     return jsonify({'transfer_id': transfer_id, 'ok': True})
 
 

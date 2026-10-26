@@ -685,7 +685,7 @@ def _walk(source_dir, skip=(), guard=None):
                 if is_ignored_directory(e.name):
                     print(f'Skipping {e.path}: hidden or system folder')
                 elif os.path.normpath(e.path) in skip:
-                    print(f'Skipping {e.path}: duplicates set aside by an earlier import')
+                    print(f'Skipping {e.path}: set aside by an earlier import')
                 elif not e.is_symlink():
                     if guard:
                         guard(e.path, e)
@@ -724,9 +724,9 @@ def _unwritable(folder):
         return why
 
 
-def _first_file(source_dir):
+def _first_file(source_dir, skip=()):
     """True as soon as the source holds any file - the empty-source check, without a full walk."""
-    for kind, _, _ in _walk(source_dir):
+    for kind, _, _ in _walk(source_dir, skip=skip):
         if kind == 'file':
             return True
     return False
@@ -1276,9 +1276,12 @@ class _ImportRun(MoveMode):
             self.writer.submit(_fn)
 
         if files is None:
-            entries = (_walk(self.source_dir, skip=(self.dups_root,),
+            # Folders the launcher asked to leave alone - the transfers import's
+            # consumed/ (main(), --transfers) - on top of move mode's DUPS/.
+            extra_skip = tuple(getattr(self.catalog, 'import_skip_dirs', None) or ())
+            entries = (_walk(self.source_dir, skip=(self.dups_root,) + extra_skip,
                              guard=self._check_walk_dir) if self.move_mode
-                       else _walk(self.source_dir))
+                       else _walk(self.source_dir, skip=extra_skip))
         else:
             def _given():
                 for p in files:
@@ -2500,6 +2503,73 @@ def _mark_running_phases(db_path, execution_id, status):
 
 # ─── Standalone subprocess entry point ────────────────────────────────────────
 
+# ── The transfers import: received albums, once imported ─────────────────────
+#
+# A received album lands in <catalog>/transfers/<id>[-label]/ (wormhole_transfer
+# .transfer_dir). Once an import has taken it in, it moves to
+# transfers/consumed/: kept - so nothing is lost if an import was wrong, and a
+# file browser shows what has been taken in - but out of the folder the next
+# import walks, so the walk stays the size of what is new
+# (documentation/features/transfers-import.md section 4.2).
+TRANSFERS_CONSUMED_DIRNAME = 'consumed'
+
+
+def _consume_transfer_albums(source_dir, catalog_db_path, execution_id):
+    """
+    Move every album THIS run imported into consumed/. Returns how many moved.
+
+    An album moves only when the run recorded at least one file of it and no
+    failure in it. "At least one" matters: an album can be published into
+    transfers/ while the import is running, after the scan has passed it - it
+    has no file operation in this run, stays where it is, and its own receive
+    queues the next import. One with a failed file stays too, so the next run
+    retries it; its imported files are skipped there as duplicates.
+    """
+    consumed = os.path.join(source_dir, TRANSFERS_CONSUMED_DIRNAME)
+    try:
+        names = sorted(os.listdir(source_dir))
+    except OSError as exc:
+        print(f'Cannot read {source_dir} to set imported albums aside: {exc}')
+        return 0
+    try:
+        conn = sqlite3.connect(catalog_db_path, timeout=60)
+        try:
+            ops = conn.execute('SELECT source_path, status FROM file_operations '
+                               'WHERE execution_id = ?', (execution_id,)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        print(f'Cannot read this run\'s results to set imported albums aside: {exc}')
+        return 0
+
+    moved = 0
+    for name in names:
+        album = os.path.join(source_dir, name)
+        if name == TRANSFERS_CONSUMED_DIRNAME or name.startswith('.') \
+                or not os.path.isdir(album) or os.path.islink(album):
+            continue
+        prefix = os.path.normpath(album) + os.sep
+        mine = [st for src, st in ops if (src or '').startswith(prefix)]
+        if not mine:
+            continue                    # not seen by this run: arrived during it
+        if any(st == 'failed' for st in mine):
+            print(f'Left {name} in transfers/: some of its files failed to import; '
+                  f'the next import retries them.')
+            continue
+        os.makedirs(consumed, exist_ok=True)
+        dest, n = os.path.join(consumed, name), 2
+        while os.path.exists(dest):
+            dest, n = os.path.join(consumed, f'{name} ({n})'), n + 1
+        try:
+            os.rename(album, dest)
+            moved += 1
+        except OSError as exc:
+            print(f'Could not move {name} to {TRANSFERS_CONSUMED_DIRNAME}/: {exc}')
+    if moved:
+        print(f'Moved {moved} imported album(s) to transfers/{TRANSFERS_CONSUMED_DIRNAME}/.')
+    return moved
+
+
 def main(execute_fn=None, description='Picture import workflow (subprocess mode)'):
     """
     The subprocess entry point, shared with io_picture_import_v2_workflow.py,
@@ -2527,6 +2597,10 @@ def main(execute_fn=None, description='Picture import workflow (subprocess mode)
     parser.add_argument('--phases', type=str, default=None,
                         help='comma-separated subset of ' + ','.join(PHASES) +
                              '; default all. Not exposed in the UI.')
+    parser.add_argument('--transfers', action='store_true',
+                        help="the source is this catalog's transfers/ folder: always "
+                             "copy, skip consumed/, and move each imported album "
+                             "into consumed/ (see _consume_transfer_albums)")
     args = parser.parse_args()
 
     catalog_db_path = os.path.join(args.target_dir, 'workflow_results.db')
@@ -2559,6 +2633,11 @@ def main(execute_fn=None, description='Picture import workflow (subprocess mode)
             print(f'WARNING: could not check the storage route ({exc}); '
                   f'continuing with {args.source_dir}')
 
+    if args.transfers:
+        # Made by the catalog, but a catalog that predates that, or a folder
+        # removed by hand, must not fail an import of "nothing received yet".
+        os.makedirs(args.source_dir, exist_ok=True)
+
     if not os.path.exists(args.source_dir):
         print(f'ERROR: Source directory does not exist: {args.source_dir}', file=sys.stderr)
         _db_complete(catalog_db_path, args.execution_id, 'failed',
@@ -2574,6 +2653,17 @@ def main(execute_fn=None, description='Picture import workflow (subprocess mode)
 
     run_phases = tuple(p.strip() for p in args.phases.split(',')) if args.phases else None
 
+    walk_skip = ()
+    if args.transfers:
+        # A received album is copied in whatever this catalog's ingest mode:
+        # reference mode would refuse it (it is not under the catalog's source
+        # folder) and move mode refuses any source inside the catalog, which
+        # transfers/ is. The album itself is kept, in consumed/, so copying loses
+        # nothing (documentation/features/transfers-import.md).
+        catalog.ingest_mode = 'copy'
+        walk_skip = (os.path.join(args.source_dir, TRANSFERS_CONSUMED_DIRNAME),)
+        catalog.import_skip_dirs = walk_skip
+
     # An empty source is almost always a mount problem rather than a real empty
     # folder, and silently "succeeding" with 0 files hides it. A bind mount
     # resolves once at container start, so if the host directory was repointed
@@ -2581,6 +2671,14 @@ def main(execute_fn=None, description='Picture import workflow (subprocess mode)
     #
     # Checked by walking only as far as the FIRST file: the full walk is the
     # scan phase's job, and it streams rather than listing.
+    if args.transfers and (run_phases is None or 'scan' in run_phases) \
+            and not _first_file(args.source_dir, skip=walk_skip):
+        # The transfers import runs whenever a receive completes and by hand; an
+        # empty transfers/ is "nothing received yet", not a misconfigured mount.
+        print('Nothing received to import: transfers/ holds no new album.')
+        _db_complete(catalog_db_path, args.execution_id, 'completed')
+        return
+
     if (run_phases is None or 'scan' in run_phases) and not _first_file(args.source_dir):
         if route_label:
             # Everything is known here: which route, where the user thinks it
@@ -2622,6 +2720,9 @@ def main(execute_fn=None, description='Picture import workflow (subprocess mode)
             _db_complete(catalog_db_path, args.execution_id, 'completed',
                          skipped_files=result.get('skipped_files', 0) if isinstance(result, dict) else 0)
             print(f'Subprocess execution {args.execution_id} completed.')
+            if args.transfers and (run_phases is None or 'scan' in run_phases):
+                _consume_transfer_albums(args.source_dir, catalog_db_path,
+                                         args.execution_id)
     except Exception as exc:
         import traceback
         traceback.print_exc()

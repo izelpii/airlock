@@ -10,8 +10,13 @@ not have, the **patch** with every other change, and the **major** when enough
 has accumulated that it is a different product.
 
 
+## 6.5
+
+- **v6.5.0** (2026-10-25) — Received albums import themselves
+
 ## 6.4
 
+- **v6.4.8** (2026-10-25) — Transcode starts on podman older than 3.2
 - **v6.4.7** (2026-10-25) — A new Mac's install says what stops it
 - **v6.4.6** (2026-10-25) — Native services pick a Python TensorFlow supports
 - **v6.4.5** (2026-10-25) — Public documents brought up to date; the Shoebox names retired
