@@ -545,7 +545,7 @@ deleted from the source — only after the database commit. Duplicates go to
 
 | Version | Change | Where it shows up here |
 |---|---|---|
-| v1 | Python script only | copy files, deduplicate, organize by date. First script working 2007 |
+| v1 | Script only: Perl (2005), then bash/Perl (2007), then bash/Python (around 2010) | copy files, deduplicate, organize by date. First script 2005 |
 | v2 | Complete redesign, barebones UI | UI monitoring copy, organization 2011 |
 | v3 | UI redesign, workflows working on UI, based on AdminLTE  | Scripting, UI and worfklows tied together 2017|
 | v4.0 | UI redesign using react, adopting version control with github | Script control, UI, minor deduplication enhancements |

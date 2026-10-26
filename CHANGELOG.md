@@ -12,6 +12,7 @@ has accumulated that it is a different product.
 
 ## 6.5
 
+- **v6.5.4** (2026-10-26) — The history goes back to 2005
 - **v6.5.3** (2026-10-26) — Copyright from 2005
 - **v6.5.2** (2026-10-26) — The README has an Installation section
 - **v6.5.1** (2026-10-26) — Installation guides; Cancel closes the Publish window
@@ -221,4 +222,4 @@ has accumulated that it is a different product.
 
 - **v3** (2017) — Workflows in the UI
 - **v2** (2011) — A first UI
-- **v1** (2007) — A Python script
+- **v1** (2005) — A script: Perl, then bash and Python
