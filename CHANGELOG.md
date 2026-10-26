@@ -12,6 +12,7 @@ has accumulated that it is a different product.
 
 ## 6.5
 
+- **v6.5.3** (2026-10-26) — Copyright from 2005
 - **v6.5.2** (2026-10-26) — The README has an Installation section
 - **v6.5.1** (2026-10-26) — Installation guides; Cancel closes the Publish window
 - **v6.5.0** (2026-10-25) — Received albums import themselves

@@ -3,7 +3,7 @@ Personal & Non-Commercial Use Only
 
 Software:  Airlock Photos
 Licensor:  Christian E. Loza
-Copyright © 2026 Christian E. Loza. All rights reserved.
+Copyright © 2005-2026 Christian E. Loza. All rights reserved.
 
 In this Agreement, "the Software" means the Airlock Photos application named above,
 including its source code, documentation, and any updates provided by the

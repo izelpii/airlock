@@ -358,7 +358,7 @@ cannot ship together.
 #### 4.2.1 Why the detector had to change
 
 [license.txt](../../license.txt) licenses Shoebox as *"Personal &
-Non-Commercial Use Only"*, "Copyright © 2026 Christian E. Loza. All rights
+Non-Commercial Use Only"*, "Copyright © 2005-2026 Christian E. Loza. All rights
 reserved", granting each user a *"non-transferable, non-sublicensable"* licence
 with "all rights not expressly granted … reserved".
 
