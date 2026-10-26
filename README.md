@@ -14,18 +14,19 @@ Current version: see [`VERSION`](VERSION) and `CHANGELOG.md`. A running instance
 2. [Architecture Overview](#architecture-overview)
 3. [Service Endpoints](#service-endpoints)
 4. [Prerequisites](#prerequisites)
-5. [Quick Start](#quick-start)
-6. [Running One Service](#running-one-service)
-7. [Project Structure](#project-structure)
-8. [Workflows](#workflows)
-9. [Key UI Features](#key-ui-features)
-10. [API Overview](#api-overview)
-11. [Database Design](#database-design)
-12. [Configuration](#configuration)
-13. [Packing an Album for Elsewhere](#packing-an-album-for-elsewhere)
-14. [Sending an Album to Someone Without Airlock](#sending-an-album-to-someone-without-airlock)
-15. [Development Notes](#development-notes)
-16. [Documentation](#documentation)
+5. [Installation](#installation)
+6. [Quick Start](#quick-start)
+7. [Running One Service](#running-one-service)
+8. [Project Structure](#project-structure)
+9. [Workflows](#workflows)
+10. [Key UI Features](#key-ui-features)
+11. [API Overview](#api-overview)
+12. [Database Design](#database-design)
+13. [Configuration](#configuration)
+14. [Packing an Album for Elsewhere](#packing-an-album-for-elsewhere)
+15. [Sending an Album to Someone Without Airlock](#sending-an-album-to-someone-without-airlock)
+16. [Development Notes](#development-notes)
+17. [Documentation](#documentation)
 
 ---
 
@@ -224,16 +225,35 @@ ollama serve
 
 ---
 
-## Quick Start
+## Installation
 
-> **Installing for the first time?** Follow the step-by-step
-> [Installation guide](docs/guides/INSTALLATION.md): prerequisites,
-> each step explained, and troubleshooting, with a page for each platform:
-> [Linux x64](docs/guides/INSTALL_LINUX_X64.md) ·
-> [Mac (Apple Silicon)](docs/guides/INSTALL_MAC_ARM.md) ·
-> [Mac (Intel)](docs/guides/INSTALL_MAC_INTEL.md) ·
-> [Raspberry Pi](docs/guides/INSTALL_RASPBERRY_PI.md).
-> This section is the short version.
+Installing for the first time? Follow the
+[Installation guide](docs/guides/INSTALLATION.md). It covers the
+prerequisites, explains each step from getting the code to the first import,
+and ends with troubleshooting. Each platform has its own page, with the exact
+commands and what is particular to that machine:
+
+| Your machine | Guide | What it gets |
+|---|---|---|
+| A Linux PC or server (x86_64) | [Linux x64](docs/guides/INSTALL_LINUX_X64.md) | Everything in containers; an NVIDIA, Intel or AMD GPU is used when present |
+| A Mac with Apple Silicon (M1 and later) | [Mac (Apple Silicon)](docs/guides/INSTALL_MAC_ARM.md) | Faces and video run natively, on the Mac's GPU and video encoder |
+| A Mac with an Intel processor | [Mac (Intel)](docs/guides/INSTALL_MAC_INTEL.md) | Video runs natively; faces run in a container |
+| A Raspberry Pi 4 or 5, 64-bit OS | [Raspberry Pi](docs/guides/INSTALL_RASPBERRY_PI.md) | Everything in containers; the Pi 4's video encoder is used when it can be |
+
+In outline:
+1. install podman, git, curl and openssl (and, optionally, Ollama);
+2. clone the repository;
+3. run `./deploy/deploy.sh` to prepare the machine;
+4. set where your photos are in `deploy/airlock.env`;
+5. run `./start-all.sh --build`;
+6. trust the certificate on each device;
+7. open **https://airlock.lan** to create the administrator account.
+
+Quick Start, next, is the same thing in brief, for someone who has done it before.
+
+---
+
+## Quick Start
 
 **On a machine that has run this before:**
 
