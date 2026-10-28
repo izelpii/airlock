@@ -230,4 +230,4 @@ in `.env`. Releases are published to `ghcr.io` by
 
 Everything this install method needs lives in this folder. The one exception
 is that workflow file, which GitHub requires in `.github/`. The design is in
-`documentation/specs/compose-install-spec.md`.
+the [compose install spec](../docs/specs/compose-install-spec.md).

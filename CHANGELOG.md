@@ -14,6 +14,7 @@ such as added documentation; it counts from the release it sits on.
 
 ## 6.6
 
+- **v6.6.0.1** (2026-10-27) — The compose install spec, published
 - **v6.6.0** (2026-10-27) — Install with Docker Compose
 
 ## 6.5

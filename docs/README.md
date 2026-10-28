@@ -35,6 +35,7 @@ is, how to run it, and its configuration.
 ## Design notes
 
 - [Accelerated services](specs/accelerated-services-spec.md) — native, container or GPU
+- [Docker Compose install](specs/compose-install-spec.md) — the design of `compose/`
 - [Ports and routes](specs/redesign-ports-routes-spec.md) — the gateway and service names
 - [Sign-in and users](specs/user-authentication-spec.md)
 - [Pet recognition](specs/pet-recognition-spec.md)
