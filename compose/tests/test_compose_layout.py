@@ -156,6 +156,35 @@ def test_layer_kinds_match_the_images_users():
         assert runs_as_appuser == (svc['layer'] == 'anyuid'), name
 
 
+def test_every_file_a_base_build_copies_is_in_git_or_vendored():
+    """A Dockerfile that COPYs a file git doesn't have works for the script
+    install, whose start script copies it in first, and fails in CI unless
+    services.json says where build.sh gets it (v6.6.1: transcode's
+    video_proxy.py)."""
+    tracked = set(_git_files())
+    missing = []
+    for name, svc in SERVICES.items():
+        source = svc.get('source')
+        if not source:
+            continue
+        vendor = svc.get('vendor', {})
+        for to, frm in vendor.items():
+            assert frm in tracked, f'{name}: vendor source {frm} is not in git'
+        for line in _app_dockerfile(source).splitlines():
+            m = re.match(r'COPY\s+(?!--from)(?:--\S+\s+)*(.+)\s+\S+$', line.strip())
+            if not m:
+                continue
+            for src in m.group(1).split():
+                if any(c in src for c in '*?') or src in ('.', './'):
+                    continue
+                path = os.path.normpath(os.path.join(source, src))
+                if path in tracked or any(f.startswith(path + '/') for f in tracked) \
+                        or src.rstrip('/') in vendor:
+                    continue
+                missing.append(f'{name}: {src}')
+    assert not missing, f'COPYed, but neither in git nor vendored by build.sh: {missing}'
+
+
 def test_baked_files_are_the_ones_the_script_install_fetches():
     deploy = open(os.path.join(REPO, 'deploy', 'deploy.sh'), encoding='utf-8').read()
     pets = open(os.path.join(REPO, 'tools', 'fetch_pet_weights.sh'), encoding='utf-8').read()

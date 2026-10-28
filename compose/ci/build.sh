@@ -186,7 +186,19 @@ for svc in "${SERVICES[@]}"; do
     else
       base_ref="$REGISTRY/airlock-$publish-base:$TAG$suffix"
     fi
-    build "$svc-base" "$platforms" "$REPO/$source" "$REPO/$source/Dockerfile" \
+    # Files the script install copies into the folder before building (its
+    # start-podman.sh; "vendor" in services.json) - here into a copy of the
+    # folder, so the source tree is never written.
+    base_context="$REPO/$source"
+    vendor_json="$(svc_field "$svc" vendor)"
+    if [[ -n "$vendor_json" ]]; then
+      base_context="$WORK/base-$svc"
+      cp -R "$REPO/$source" "$base_context"
+      while IFS=$'\t' read -r to from; do
+        cp "$REPO/$from" "$base_context/$to"
+      done < <(python3 -c "import json,sys; [print(f'{k}\t{v}') for k,v in json.loads(sys.argv[1]).items()]" "$vendor_json")
+    fi
+    build "$svc-base" "$platforms" "$base_context" "$base_context/Dockerfile" \
       -t "$base_ref" "${base_args[@]}"
   fi
 

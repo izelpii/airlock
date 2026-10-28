@@ -47,7 +47,8 @@
     "geoloc":    {"source": "systems/backend-geoloc", "layer": "anyuid",
                   "home": "/home/appuser", "owned": ["/home/appuser", "/app"]},
     "transcode": {"source": "systems/backend-transcode", "layer": "anyuid",
-                  "home": "/home/appuser", "owned": ["/home/appuser"]},
+                  "home": "/home/appuser", "owned": ["/home/appuser"],
+                  "vendor": {"video_proxy.py": "systems/backend/workflows/lib/video_proxy.py"}},
     "albums":    {"source": "systems/backend-albums", "layer": "plain"},
     "gallery":   {"source": "systems/album-gallery", "layer": "plain",
                   "build_args": {"GALLERY_REVISION": "{gallery_revision}"}}
