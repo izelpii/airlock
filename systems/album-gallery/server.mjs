@@ -37,9 +37,13 @@
  *   ALBUM_ROOT             legacy: one catalog's cache/Albums, served at the
  *                          server root. Honoured for one release; CATALOGS_ROOT
  *                          wins when both are set.
- *   ALBUM_SESSION_SECRET   HMAC key for password sessions. Generated at boot
- *                          when unset, loudly, because sessions then die with
- *                          the process.
+ *   ALBUM_SESSION_SECRET   HMAC key for password sessions. Wins when set.
+ *   ALBUM_STATE_DIR        a small writable folder for what must outlive the
+ *                          process. With the secret unset, one is generated
+ *                          there ONCE (session-secret, mode 0600) and reused at
+ *                          every start, so a restart no longer signs everyone
+ *                          out of password-protected deployments. With neither,
+ *                          a key is generated per process, loudly.
  *   PORT                   default 3001
  */
 
@@ -77,15 +81,49 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000   // 30 days
 // (deployment-publish-to-server-spec.md section 9).
 const GALLERY_REVISION = process.env.GALLERY_REVISION || 'unknown'
 
-let SESSION_SECRET = process.env.ALBUM_SESSION_SECRET
-if (!SESSION_SECRET) {
-  SESSION_SECRET = crypto.randomBytes(32).toString('hex')
+const SECRET_FILE = 'session-secret'
+
+/**
+ * The key that signs password sessions, and where it came from.
+ *
+ * It used to be generated per process whenever ALBUM_SESSION_SECRET was unset -
+ * which was every installation that had not set it by hand - so each restart of
+ * this server (every deploy, every reboot) signed every visitor out of every
+ * password-protected deployment. Kept in a file instead, it is generated once
+ * per installation. The variable still wins, so a value set on purpose is never
+ * replaced by the file.
+ */
+function loadSessionSecret(env = process.env) {
+  if (env.ALBUM_SESSION_SECRET) return { secret: env.ALBUM_SESSION_SECRET, source: 'environment' }
+  const dir = env.ALBUM_STATE_DIR
+  if (dir) {
+    const file = path.join(dir, SECRET_FILE)
+    try {
+      const kept = fs.readFileSync(file, 'utf8').trim()
+      if (kept.length >= 32) return { secret: kept, source: 'kept' }
+    } catch (err) {
+      if (err.code !== 'ENOENT') console.warn(`album-gallery: cannot read ${file}: ${err.message}`)
+    }
+    const fresh = crypto.randomBytes(32).toString('hex')
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      // 'w' rather than 'wx': a file that exists but was unusable (empty, too
+      // short) is replaced, not kept forever.
+      fs.writeFileSync(file, fresh + '\n', { mode: 0o600 })
+      return { secret: fresh, source: 'kept' }
+    } catch (err) {
+      console.warn(`album-gallery: cannot keep the session secret in ${file}: ${err.message}`)
+    }
+  }
   console.warn(
-    'album-gallery: ALBUM_SESSION_SECRET is not set. A key was generated for\n' +
-    '  this process, so everyone signed in to a password-protected deployment\n' +
-    '  will be signed out when this server restarts. Set the variable to fix it.',
+    'album-gallery: no ALBUM_SESSION_SECRET and no writable ALBUM_STATE_DIR. A key\n' +
+    '  was generated for this process, so everyone signed in to a password-protected\n' +
+    '  deployment will be signed out when this server restarts.',
   )
+  return { secret: crypto.randomBytes(32).toString('hex'), source: 'process' }
 }
+
+const { secret: SESSION_SECRET, source: SESSION_SECRET_SOURCE } = loadSessionSecret()
 
 const MIME = {
   '.html': 'text/html',
@@ -571,6 +609,8 @@ function healthPayload() {
     catalogs,
     legacy_album_root: Boolean(ALBUM_ROOT),
     revision: GALLERY_REVISION,
+    // environment | kept | process. 'process' means a restart signs everyone out.
+    session_secret: SESSION_SECRET_SOURCE,
     uptime_seconds: Math.round(process.uptime()),
     detail:
       rootState === 'missing'

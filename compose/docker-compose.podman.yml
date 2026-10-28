@@ -1,0 +1,27 @@
+# Differences for podman (best-effort; the script install is the one built for
+# podman - README.md, "Podman").
+#
+#   podman compose -f docker-compose.yml -f docker-compose.podman.yml up -d
+#
+# Rootless podman maps your user to uid 0 inside a container, so the images'
+# entrypoint (which starts as root and becomes PUID:PGID) would write files as a
+# sub-uid on the host. keep-id maps you to uid 1000 - the images' own user -
+# instead, as the script install does; PUID and PGID then stay 1000.
+#
+# Ports 80 and 443 need the unprivileged port floor lowered first:
+#   sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+# (inside the podman machine on a Mac: systems/gateway/enable-port-80.sh).
+
+x-keep-id: &keep-id
+  userns_mode: "keep-id:uid=1000,gid=1000"
+  environment:
+    PUID: "1000"
+    PGID: "1000"
+
+services:
+  backend: *keep-id
+  deepface: *keep-id
+  pets: *keep-id
+  vision: *keep-id
+  geoloc: *keep-id
+  transcode: *keep-id

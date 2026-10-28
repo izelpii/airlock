@@ -44,15 +44,15 @@ fi
 # name | URL that proves it answers | what it is | accelerated service key
 # (accelerated-services-spec.md: such a service may run natively, in a
 # container, or in a container with the GPU - AIRLOCK_<KEY>_MODE decides)
-# Any HTTP status counts as "answering" (the backend says 401 to a stranger,
-# geoloc 400 to a request without coordinates); only no answer at all is down.
+# Any HTTP status counts as "answering" (the backend says 401 to a stranger);
+# only no answer at all is down.
 SERVICES=(
     "airlock-gateway|https://localhost:${TLS_PORT}/gateway-health|gateway (HTTPS entry point)"
     "workflow-backend|http://localhost:5000/api/auth/setup-required|backend (API, workflows, imports)"
     "workflow-frontend|http://localhost:3000/|frontend (web app)"
     "backend-deepface|http://localhost:5001/api/health|faces|DEEPFACE"
     "backend-transcode|http://localhost:5004/health|video previews|TRANSCODE"
-    "backend-geoloc|http://localhost:5002/poi|places"
+    "backend-geoloc|http://localhost:5002/health|places"
     "backend-vision|http://localhost:5003/health|vision"
     "backend-albums|http://localhost:5005/health|albums"
     "album-gallery|http://localhost:3001/health|published galleries"

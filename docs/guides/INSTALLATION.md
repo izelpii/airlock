@@ -12,6 +12,7 @@ its own page with the exact commands:
 | A Mac with Apple Silicon (M1 and later) | [Mac (Apple Silicon)](INSTALL_MAC_ARM.md) | Faces and video run natively, on the Mac's GPU and video encoder |
 | A Mac with an Intel processor | [Mac (Intel)](INSTALL_MAC_INTEL.md) | Video runs natively; faces run in a container |
 | A Raspberry Pi 4 or 5, 64-bit OS | [Raspberry Pi](INSTALL_RASPBERRY_PI.md) | Everything in containers; the Pi 4's video encoder is used when it can be |
+| **Any machine with Docker** | [Docker Compose](../../compose/README.md) | The easy install: published images, nothing to build. Faces and video on the CPU on a Mac |
 
 Not sure which Mac you have? Apple menu ▸ **About This Mac**: "Chip: Apple M…"
 is Apple Silicon, and "Processor: … Intel" is Intel. On Linux, `uname -m` prints
@@ -89,7 +90,7 @@ Put it anywhere you like; the scripts work out everything from where the
 folder is:
 
 ```bash
-git clone https://github.com/izelpi/airlock.git
+git clone https://github.com/izelpii/airlock.git
 cd airlock
 ```
 

@@ -19,7 +19,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         rsync \
         bzip2 \
         curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Debian's ffmpeg brings Mesa's GPU drivers with it: LLVM, gallium and z3,
+    # about 190 MB. They are loaded on demand for a GPU, never linked, and this
+    # container has none - its previews are encoded on the CPU (the GPU path is
+    # backend-transcode, a separate image, which keeps them). Removed past the
+    # package dependencies, then proved: ffmpeg must still decode and encode,
+    # or the build stops here.
+    && dpkg --purge --force-depends $(dpkg-query -W -f='${Package}\n' \
+           'libllvm[0-9]*' 'libz3-[0-9]*' mesa-libgallium libgl1-mesa-dri mesa-vulkan-drivers \
+           2>/dev/null) \
+    && ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=64x64:rate=1 -frames:v 2 \
+           -c:v libx264 -f null - \
+    && ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=64x64 -frames:v 1 \
+           -f image2 /tmp/probe.jpg && ffprobe -v error /tmp/probe.jpg && rm -f /tmp/probe.jpg
 
 # ── restic: catalog backups (documentation/specs/backup-backrest-spec.md) ──────
 # Airlock runs restic itself, here, where the catalogs are; the repository lives

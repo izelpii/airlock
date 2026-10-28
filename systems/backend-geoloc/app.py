@@ -131,6 +131,14 @@ def combine_pois(nominatim_pois, osmnx_pois):
     return combined
 
 
+@app.route('/health', methods=['GET'])
+def health():
+    """Liveness, for start-all.sh, deploy/status.sh and container health checks.
+    Every other service has one; without it, the only probe was '/', a 404
+    that proved the server answered and nothing more."""
+    return jsonify({'status': 'ok'})
+
+
 @app.route('/poi', methods=['GET'])
 def get_poi():
     """

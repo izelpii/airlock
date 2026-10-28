@@ -11,11 +11,46 @@ WORKDIR /app
 
 # ── Python dependencies ────────────────────────────────────────────────────────
 COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r ./requirements.txt
 # GPU=1 builds the 'gpu' variant (start-podman.sh with AIRLOCK_GPU=1): TensorFlow
 # with its CUDA libraries, for a container that gets the NVIDIA GPU through CDI.
 # The default image stays CPU-only and small (accelerated-services-spec.md 3.3).
 ARG GPU=0
+# Two things pip leaves behind, removed in the SAME layer as the install - a
+# later RUN that deletes files only hides them, and the image keeps their size:
+#
+#  * On x86_64 the `tensorflow` wheel carries CUDA support whether or not there
+#    is a GPU: 1.9 GB installed. `tensorflow-cpu` is the same release without
+#    it, under the same import name - about a gigabyte less. deepface and
+#    retina-face name `tensorflow` as a dependency, so pip always installs that
+#    one first; it is swapped afterwards, at the same version, and only when a
+#    tensorflow-cpu wheel exists for it. arm64 wheels have no CUDA to drop, and
+#    the GPU variant needs it.
+#  * OpenCV arrives two or three times - opencv-python-headless (asked for
+#    here), opencv-python (the GUI build, from deepface 0.0.100 and earlier) and
+#    opencv-contrib-python-headless (deepface 0.0.103 and later). Each installs
+#    the same cv2 package over the others. Exactly one is kept: the contrib
+#    build when something requires it, since it is a superset, else headless.
+#  * tensorflow/include: 280 MB of C++ headers, for compiling custom ops. Never
+#    read at runtime.
+RUN pip install --no-cache-dir -r ./requirements.txt && \
+    if pip show opencv-contrib-python-headless >/dev/null 2>&1; then \
+      CVPKG=opencv-contrib-python-headless; else CVPKG=opencv-python-headless; fi && \
+    CV="$(pip show "$CVPKG" | awk '/^Version:/{print $2}')" && \
+    pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless \
+                     opencv-contrib-python-headless && \
+    pip install --no-cache-dir --no-deps "${CVPKG}==${CV}" && \
+    if [ "$GPU" != "1" ] && [ "$(uname -m)" = "x86_64" ]; then \
+      TF="$(pip show tensorflow | awk '/^Version:/{print $2}')"; \
+      if pip download --no-deps --no-cache-dir -q -d /tmp/tfcpu "tensorflow-cpu==${TF}" >/dev/null 2>&1; then \
+        pip uninstall -y tensorflow && \
+        pip install --no-cache-dir --no-deps /tmp/tfcpu/tensorflow_cpu-*.whl; \
+      else \
+        echo "no tensorflow-cpu ${TF} wheel - keeping tensorflow"; \
+      fi; \
+      rm -rf /tmp/tfcpu; \
+    fi && \
+    rm -rf /usr/local/lib/python3.12/site-packages/tensorflow/include && \
+    python -c "import tensorflow as tf, cv2; print('tensorflow', tf.__version__, '| opencv', cv2.__version__)"
 RUN if [ "$GPU" = "1" ]; then \
       TF="$(pip show tensorflow 2>/dev/null | awk '/^Version:/{print $2}')"; \
       pip install --no-cache-dir "tensorflow[and-cuda]==${TF}"; \

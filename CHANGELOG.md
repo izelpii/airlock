@@ -12,8 +12,15 @@ not have, the **patch** with a fix or any other change to what it does, and the
 such as added documentation; it counts from the release it sits on.
 
 
+## 6.6
+
+- **v6.6.0** (2026-10-27) — Install with Docker Compose
+
 ## 6.5
 
+- **v6.5.8** (2026-10-27) — Smaller images
+- **v6.5.7** (2026-10-27) — A gallery restart keeps visitors signed in
+- **v6.5.6** (2026-10-27) — Places has a health check
 - **v6.5.5.1** (2026-10-26) — An introduction for people new to Airlock
 - **v6.5.5** (2026-10-26) — The catalog form names its Import Mode
 - **v6.5.4.1** (2026-10-26) — The history before v4, in detail; a fourth version number

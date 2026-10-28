@@ -1,0 +1,265 @@
+# Airlock Photos - the compose install.
+#
+#   cp .env.example .env && $EDITOR .env      # where your photos are, your LAN address
+#   docker compose up -d
+#
+# Everything is explained in README.md beside this file. Settings come from .env;
+# nothing here needs editing. Optional pieces are separate files:
+#   docker-compose.gpu.yml      NVIDIA GPU for faces, video and Ollama
+#   docker-compose.podman.yml   differences for podman
+#   --profile ollama            Ollama in the stack instead of on the host
+#
+# Only the gateway publishes ports. Every other service is reachable inside the
+# "airlock" network alone, where the *.airlock.lan names are aliases of the
+# gateway - exactly the names the application already uses.
+
+name: airlock
+
+x-image: &image-defaults
+  restart: unless-stopped
+  networks: [airlock]
+
+# Images that run as appuser: started as PUID:PGID (images/common/airlock-anyuid).
+x-owner: &owner
+  PUID: ${PUID:-1000}
+  PGID: ${PGID:-1000}
+
+# Optional tuning (import, faces, video, pets), passed only when set: put
+# NAME=value lines in settings.env - see settings.env.example. A setting left
+# empty here would not mean "the default" (an empty DEEPFACE_WARMUP_MODELS warms
+# up nothing), so nothing optional is passed as an empty string.
+x-settings: &settings
+  env_file:
+    - path: ${SETTINGS_FILE:-./settings.env}
+      required: false
+
+# Health: any HTTP answer counts - /api/* rightly says 401 to a stranger.
+x-http-ok: &http-ok
+  interval: 30s
+  timeout: 10s
+  retries: 5
+
+services:
+
+  # ── One-shot: the gateway's certificate, first start only ──────────────────
+  certs:
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-certs:${AIRLOCK_VERSION:-latest}
+    restart: "no"
+    environment:
+      AIRLOCK_NAMES: ${AIRLOCK_NAMES:-}
+      AIRLOCK_CA_LABEL: ${AIRLOCK_CA_LABEL:-airlock}
+      <<: *owner
+    volumes:
+      - ${CERTS_DIR:-./certs}:/work/certs
+    network_mode: none
+
+  # ── The only published ports ─────────────────────────────────────────────────
+  gateway:
+    <<: *image-defaults
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-gateway:${AIRLOCK_VERSION:-latest}
+    depends_on:
+      certs: {condition: service_completed_successfully}
+      frontend: {condition: service_started}
+      backend: {condition: service_started}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      SERVER_DOMAIN: ${SERVER_DOMAIN:-airlock.lan}
+      OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal}
+    extra_hosts:
+      # Docker Desktop answers this name itself; on Linux this line provides it.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${CERTS_DIR:-./certs}:/etc/nginx/certs:ro
+    networks:
+      airlock:
+        # The service names, as in systems/gateway/hosts-entries.txt. Inside the
+        # network they reach the gateway, which routes by Host header.
+        aliases:
+          - airlock.lan
+          - backend.airlock.lan
+          - deepface.airlock.lan
+          - vision.airlock.lan
+          - geoloc.airlock.lan
+          - albums.airlock.lan
+          - gallery.airlock.lan
+          - ollama.airlock.lan
+          - transcode.airlock.lan
+          - pets.airlock.lan
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/gateway-health"]
+      <<: *http-ok
+
+  frontend:
+    <<: *image-defaults
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-frontend:${AIRLOCK_VERSION:-latest}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/"]
+      <<: *http-ok
+
+  backend:
+    <<: [*image-defaults, *settings]
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-backend:${AIRLOCK_VERSION:-latest}
+    depends_on:
+      deepface: {condition: service_started}
+      albums: {condition: service_started}
+      transcode: {condition: service_started}
+    environment:
+      <<: *owner
+      DEEPFACE_URL: http://deepface.airlock.lan
+      ALBUMS_URL: http://albums.airlock.lan
+      BACKEND_URL: http://backend.airlock.lan
+      # Empty (TRANSCODE_URL= in .env) means the import makes video previews itself.
+      TRANSCODE_URL: ${TRANSCODE_URL-http://transcode:5004}
+      STORAGE_ROOT_HOST: ${STORAGE_ROOT:?set STORAGE_ROOT in .env - the folder your photos are under}
+      STORAGE_ROOT_CONTAINER: /storage
+      # Empty is the application's own default list, plus the address each page
+      # is loaded from.
+      AIRLOCK_ALLOWED_ORIGINS: ${AIRLOCK_ALLOWED_ORIGINS:-}
+    volumes:
+      - ${DATABASE_DIR:-./data/database}:/app/database
+      - ${CATALOGS_DIR:-./data/catalogs}:/catalogs
+      - ${INPUT_DIR:-./data/IN}:/input
+      # Read-write so a move-mode import can take files out of a route marked
+      # for it; STORAGE_ROOT_MODE=ro makes every route read-only to the kernel.
+      - ${STORAGE_ROOT}:/storage:${STORAGE_ROOT_MODE:-rw}
+      - ${LICENSE_DIR:-./license}:/license:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u, urllib.error as e\ntry: u.urlopen('http://127.0.0.1:5000/api/version', timeout=5)\nexcept e.HTTPError: pass"]
+      <<: *http-ok
+      start_period: 60s
+
+  deepface:
+    <<: [*image-defaults, *settings]
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-deepface:${AIRLOCK_VERSION:-latest}${DEEPFACE_VARIANT:-}
+    environment:
+      <<: *owner
+      DEEPFACE_WORKERS: ${DEEPFACE_WORKERS:-2}
+      DEEPFACE_WARMUP_EMBEDDER: ${DEEPFACE_WARMUP_EMBEDDER:-1}
+      DEEPFACE_MODEL: ${DEEPFACE_MODEL:-VGG-Face}
+      YUNET_SCORE_THRESHOLD: ${YUNET_SCORE_THRESHOLD:-0.9}
+    volumes:
+      # Starts as a copy of the image's folder, which carries YuNet; recognition
+      # models download into it on first use and are kept.
+      - deepface-weights:/home/appuser/.deepface
+      - deepface-faces:/app/database_images
+      - deepface-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:5001/api/health', timeout=5)"]
+      <<: *http-ok
+      start_period: 300s
+
+  pets:
+    <<: [*image-defaults, *settings]
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-pets:${AIRLOCK_VERSION:-latest}
+    environment:
+      <<: *owner
+      PETS_DETECT_SIZE: ${PETS_DETECT_SIZE:-416}
+      PETS_CONCURRENCY: ${PETS_CONCURRENCY:-2}
+    volumes:
+      # Starts with the detector (YOLOX-Tiny). The identity model is added by
+      # hand - README.md, "Pets".
+      - pets-weights:/app/weights
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:5006/health', timeout=5)"]
+      <<: *http-ok
+      start_period: 60s
+
+  vision:
+    <<: *image-defaults
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-vision:${AIRLOCK_VERSION:-latest}
+    environment:
+      <<: *owner
+      OLLAMA_HOST: http://ollama.airlock.lan
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:latest}
+    volumes:
+      - ${CATALOGS_DIR:-./data/catalogs}:/catalogs
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:5003/health', timeout=5)"]
+      <<: *http-ok
+
+  albums:
+    <<: *image-defaults
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-albums:${AIRLOCK_VERSION:-latest}
+    environment:
+      OLLAMA_HOST: http://ollama.airlock.lan
+      ALBUMS_LLM_MODEL: ${ALBUMS_LLM_MODEL:-granite3.3:8b}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:5005/health', timeout=5)"]
+      <<: *http-ok
+
+  geoloc:
+    <<: *image-defaults
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-geoloc:${AIRLOCK_VERSION:-latest}
+    environment:
+      <<: *owner
+    healthcheck:
+      # /health since v6.5.6; a TCP connect, so an older image counts as healthy too.
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 5002), 5)"]
+      <<: *http-ok
+
+  gallery:
+    <<: *image-defaults
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-gallery:${AIRLOCK_VERSION:-latest}
+    environment:
+      CATALOGS_ROOT: /catalogs
+      ALBUM_SESSION_SECRET: ${ALBUM_SESSION_SECRET:-}
+      ALBUM_STATE_DIR: /state
+    volumes:
+      - ${CATALOGS_DIR:-./data/catalogs}:/catalogs:ro
+      - gallery-state:/state
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      <<: *http-ok
+
+  transcode:
+    <<: [*image-defaults, *settings]
+    image: ${AIRLOCK_IMAGES:-ghcr.io/izelpii}/airlock-transcode:${AIRLOCK_VERSION:-latest}
+    environment:
+      <<: *owner
+      TRANSCODE_MODE: ${TRANSCODE_MODE:-container}
+      # The render and video groups, for /dev/dri or /dev/video11 - see README.md.
+      AIRLOCK_EXTRA_GIDS: ${VIDEO_GIDS:-}
+    volumes:
+      - ${CATALOGS_DIR:-./data/catalogs}:/catalogs
+    # Intel/AMD (VA-API, Quick Sync) or a Raspberry Pi 4's encoder: uncomment
+    # the device, and set VIDEO_GIDS in .env (README.md, "Hardware video").
+    # devices:
+    #   - /dev/dri:/dev/dri
+    #   - /dev/video11:/dev/video11
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:5004/health', timeout=5)"]
+      <<: *http-ok
+
+  # ── Optional: Ollama in the stack (docker compose --profile ollama up -d) ────
+  ollama:
+    <<: *image-defaults
+    image: docker.io/ollama/ollama:${OLLAMA_VERSION:-latest}
+    profiles: [ollama]
+    volumes:
+      - ollama:/root/.ollama
+
+  ollama-models:
+    image: docker.io/ollama/ollama:${OLLAMA_VERSION:-latest}
+    profiles: [ollama]
+    restart: "no"
+    depends_on:
+      ollama: {condition: service_started}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "sleep 5 && ollama pull ${OLLAMA_MODEL:-gemma4:latest} && ollama pull ${ALBUMS_LLM_MODEL:-granite3.3:8b}"
+    networks: [airlock]
+
+networks:
+  airlock: {}
+
+volumes:
+  deepface-weights: {}
+  deepface-faces: {}
+  deepface-uploads: {}
+  pets-weights: {}
+  gallery-state: {}
+  ollama: {}

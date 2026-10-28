@@ -1,0 +1,57 @@
+#!/bin/sh
+# Start the image's own command as PUID:PGID instead of the uid it was built for.
+#
+# compose/README.md, "Who owns the files". The application's images run as
+# appuser, uid 1000. Under rootless podman the script install maps the invoking
+# user to that uid, so files are theirs whatever their uid. Docker has no such
+# mapping: uid 1000 inside is uid 1000 on the host. This entrypoint starts as
+# root, gives the image's OWN state folders to PUID:PGID, and then becomes that
+# user - the PUID/PGID convention many self-hosted images use.
+#
+#   PUID, PGID           who to become (default 1000:1000, the images' own user)
+#   AIRLOCK_OWNED_DIRS   the image's state folders, set by the compose layer:
+#                        named volumes and the home folder. NEVER the user's
+#                        data - catalogs, the database and the storage root are
+#                        bind mounts that already belong to the host user.
+#   AIRLOCK_EXTRA_GIDS   supplementary groups, comma-separated: transcode's
+#                        render and video groups, for /dev/dri and /dev/video11.
+#
+# Already not root (compose `user:`, rootless engines): run the command as is.
+set -eu
+
+if [ "$(id -u)" != 0 ]; then
+    exec "$@"
+fi
+
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
+case "$PUID$PGID" in
+    *[!0-9]*) echo "airlock-anyuid: PUID and PGID must be numbers (got '$PUID' and '$PGID')" >&2; exit 64 ;;
+esac
+if [ "$PUID" = 0 ]; then
+    echo "airlock-anyuid: refusing PUID=0 - the services are not meant to run as root" >&2
+    exit 64
+fi
+
+# A name for the uid, for code that asks who it is (getpass, ~ expansion, ssh).
+if ! grep -q "^[^:]*:[^:]*:${PGID}:" /etc/group; then
+    echo "airlock:x:${PGID}:" >> /etc/group
+fi
+if ! grep -q "^[^:]*:[^:]*:${PUID}:" /etc/passwd; then
+    echo "airlock:x:${PUID}:${PGID}:Airlock:${HOME:-/tmp}:/bin/sh" >> /etc/passwd
+fi
+
+# The image's own state folders. Only re-owned when they are not PUID's already,
+# so a restart costs nothing; a named volume created from the image starts out
+# owned by uid 1000, which is the case this exists for.
+for dir in ${AIRLOCK_OWNED_DIRS:-}; do
+    [ -d "$dir" ] || mkdir -p "$dir"
+    if [ "$(stat -c %u:%g "$dir")" != "${PUID}:${PGID}" ]; then
+        chown -R "${PUID}:${PGID}" "$dir"
+    fi
+done
+
+if [ -n "${AIRLOCK_EXTRA_GIDS:-}" ]; then
+    exec setpriv --reuid="$PUID" --regid="$PGID" --groups="$AIRLOCK_EXTRA_GIDS" -- "$@"
+fi
+exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups -- "$@"

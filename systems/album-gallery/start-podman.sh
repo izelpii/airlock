@@ -50,10 +50,14 @@ source "$SCRIPT_DIR/../../deploy/airlock-env.sh"
 # resolves in one and not the other.
 # CATALOGS_HOST_DIR comes from deploy/airlock-env.sh
 
-# Signing key for password-protected deployments. Without it the server
-# generates one at boot and everyone is signed out on every restart, which it
-# says loudly. Set it here, or in the environment, to keep sessions.
+# Signing key for password-protected deployments. Set ALBUM_SESSION_SECRET to
+# choose it; otherwise the server generates one once and keeps it in the state
+# folder below, so a restart does not sign everyone out.
 ALBUM_SESSION_SECRET="${ALBUM_SESSION_SECRET:-}"
+# Beside the application database: machine state, never in git, and on the same
+# disk that is already backed up with it.
+GALLERY_STATE_DIR="${GALLERY_STATE_DIR:-${DATABASE_HOST_DIR}/album-gallery}"
+mkdir -p "$GALLERY_STATE_DIR"
 
 if [[ "${1:-}" == "--build" ]] || ! podman image exists album-gallery 2>/dev/null; then
   airlock_prepare_build
@@ -85,5 +89,7 @@ fi
 podman run ${AIRLOCK_DETACH_FLAG} --rm --replace --name album-gallery -p 3001:3001 \
   -e CATALOGS_ROOT=/catalogs \
   -e ALBUM_SESSION_SECRET="${ALBUM_SESSION_SECRET}" \
+  -e ALBUM_STATE_DIR=/state \
   -v "${CATALOGS_HOST_DIR}":/catalogs:ro,z \
+  -v "${GALLERY_STATE_DIR}":/state:z \
   album-gallery

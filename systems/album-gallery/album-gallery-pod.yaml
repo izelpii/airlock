@@ -42,15 +42,19 @@ spec:
           value: /catalogs
 
         # Signs the session cookie for password-protected deployments. Leave it
-        # empty and the server generates a key at boot, logs that it did, and
-        # signs everyone out on every restart.
+        # empty and the server generates one once and keeps it in ALBUM_STATE_DIR,
+        # so a restart does not sign everyone out.
         - name: ALBUM_SESSION_SECRET
           value: ""
+        - name: ALBUM_STATE_DIR
+          value: /state
 
       volumeMounts:
         - name: catalogs
           mountPath: /catalogs
           readOnly: true
+        - name: state
+          mountPath: /state
 
       # Keep the container from running as root.
       securityContext:
@@ -80,4 +84,11 @@ spec:
       hostPath:
         # Relative to systems/album-gallery/: the repository's catalogs/.
         path: ../../catalogs
+        type: DirectoryOrCreate
+
+    # The server's kept session secret: beside the application database
+    # (DATABASE_HOST_DIR), machine state that is never in git.
+    - name: state
+      hostPath:
+        path: ../backend/database/album-gallery
         type: DirectoryOrCreate

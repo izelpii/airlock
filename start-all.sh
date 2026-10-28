@@ -552,7 +552,7 @@ fi
 # work regardless; this is a diagnostic fallback, not a second addressing scheme.
 if [[ "$GATEWAY_UP" == "1" && "$NAMES_RESOLVE" == "1" ]]; then
   ok "health checks will use the service names"
-  URL_GEOLOC="http://geoloc.airlock.lan/"
+  URL_GEOLOC="http://geoloc.airlock.lan/health"
   URL_PETS="http://pets.airlock.lan/health"
   URL_VISION="http://vision.airlock.lan/health"
   URL_BACKEND="http://backend.airlock.lan/api/catalogs"
@@ -561,7 +561,7 @@ if [[ "$GATEWAY_UP" == "1" && "$NAMES_RESOLVE" == "1" ]]; then
 else
   warn "falling back to port-based health checks for this run"
   warn "  (the services themselves are unaffected - only these checks)"
-  URL_GEOLOC="http://localhost:5002/"
+  URL_GEOLOC="http://localhost:5002/health"
   URL_PETS="http://localhost:5006/health"
   URL_VISION="http://localhost:5003/health"
   URL_BACKEND="http://localhost:5000/api/catalogs"

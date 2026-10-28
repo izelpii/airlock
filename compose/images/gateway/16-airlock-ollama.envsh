@@ -1,0 +1,31 @@
+#!/bin/sh
+# Where Ollama is, for the compose gateway's airlock_ollama upstream.
+# Sourced by nginx's entrypoint after 15-local-resolvers and before the
+# templates are rendered (20-envsubst-on-templates.sh), so what it exports
+# reaches envsubst.
+#
+#   OLLAMA_UPSTREAM   host.docker.internal (Ollama on the host, the default) or
+#                     ollama (the in-stack service, --profile ollama)
+#   OLLAMA_PORT       default 11434
+#
+# A name in /etc/hosts - host.docker.internal from extra_hosts on Linux - is not
+# visible to nginx's resolver, which asks DNS only, so it is written as its
+# address. Any other name is re-resolved at runtime, so a stack started without
+# the ollama profile still starts, and answers 502 on that path.
+#
+# Sourced, not executed: no `exit` here.
+
+_up="${OLLAMA_UPSTREAM:-host.docker.internal}"
+_port="${OLLAMA_PORT:-11434}"
+_ip="$(awk -v h="$_up" '$1 !~ /^#/ { for (i = 2; i <= NF; i++) if ($i == h) { print $1; exit } }' /etc/hosts)"
+case "$_ip" in
+    *:*) _ip="[$_ip]" ;;
+esac
+if [ -n "$_ip" ]; then
+    AIRLOCK_OLLAMA_SERVER="${_ip}:${_port}"
+else
+    AIRLOCK_OLLAMA_SERVER="${_up}:${_port} resolve"
+fi
+export AIRLOCK_OLLAMA_SERVER
+echo "16-airlock-ollama: Ollama upstream is ${AIRLOCK_OLLAMA_SERVER}"
+unset _up _port _ip

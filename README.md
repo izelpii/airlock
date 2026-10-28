@@ -269,6 +269,7 @@ commands and what is particular to that machine:
 | A Mac with Apple Silicon (M1 and later) | [Mac (Apple Silicon)](docs/guides/INSTALL_MAC_ARM.md) | Faces and video run natively, on the Mac's GPU and video encoder |
 | A Mac with an Intel processor | [Mac (Intel)](docs/guides/INSTALL_MAC_INTEL.md) | Video runs natively; faces run in a container |
 | A Raspberry Pi 4 or 5, 64-bit OS | [Raspberry Pi](docs/guides/INSTALL_RASPBERRY_PI.md) | Everything in containers; the Pi 4's video encoder is used when it can be |
+| **Any machine with Docker** | [Docker Compose](compose/README.md) | The easy install: published images and one compose file, nothing to build |
 
 In outline:
 1. install podman, git, curl and openssl (and, optionally, Ollama);

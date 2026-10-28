@@ -1,0 +1,26 @@
+# NVIDIA GPU for faces, video previews and (with --profile ollama) Ollama.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Needs the NVIDIA driver and the NVIDIA Container Toolkit on this machine, and
+# DEEPFACE_VARIANT=-gpu in .env: the faces image built with GPU support (amd64
+# only). README.md, "NVIDIA".
+
+x-nvidia: &nvidia
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  deepface:
+    <<: *nvidia
+  transcode:
+    <<: *nvidia
+    environment:
+      TRANSCODE_MODE: gpu
+  ollama:
+    <<: *nvidia

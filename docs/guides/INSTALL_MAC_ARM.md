@@ -74,7 +74,7 @@ Ollama runs natively and uses the GPU.
 ### 5. Get the code, prepare, and start
 
 ```bash
-git clone https://github.com/izelpi/airlock.git
+git clone https://github.com/izelpii/airlock.git
 cd airlock
 ./deploy/deploy.sh --check
 ./deploy/deploy.sh
