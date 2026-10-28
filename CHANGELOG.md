@@ -14,6 +14,7 @@ such as added documentation; it counts from the release it sits on.
 
 ## 6.6
 
+- **v6.6.3** (2026-10-28) — Faces keeps its working database, for any user
 - **v6.6.2** (2026-10-28) — The transcode image builds in CI
 - **v6.6.1** (2026-10-28) — The compose images build natively
 - **v6.6.0.2** (2026-10-27) — The README's quick installation

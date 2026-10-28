@@ -139,10 +139,14 @@ services:
       DEEPFACE_WARMUP_EMBEDDER: ${DEEPFACE_WARMUP_EMBEDDER:-1}
       DEEPFACE_MODEL: ${DEEPFACE_MODEL:-VGG-Face}
       YUNET_SCORE_THRESHOLD: ${YUNET_SCORE_THRESHOLD:-0.9}
+      # Its own processing database, on a volume: unset, it lands in /app, which
+      # only uid 1000 can write to, and is lost on every update.
+      FACE_LABELS_DB: /app/data/face_labels.db
     volumes:
       # Starts as a copy of the image's folder, which carries YuNet; recognition
       # models download into it on first use and are kept.
       - deepface-weights:/home/appuser/.deepface
+      - deepface-data:/app/data
       - deepface-faces:/app/database_images
       - deepface-uploads:/app/uploads
     healthcheck:
@@ -258,6 +262,7 @@ networks:
 
 volumes:
   deepface-weights: {}
+  deepface-data: {}
   deepface-faces: {}
   deepface-uploads: {}
   pets-weights: {}

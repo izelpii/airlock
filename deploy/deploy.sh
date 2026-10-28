@@ -157,6 +157,7 @@ DIRS=(
   "$AIRLOCK_ROOT/systems/backend-deepface/uploads"
   "$AIRLOCK_ROOT/systems/backend-deepface/database_images"
   "$AIRLOCK_ROOT/systems/backend-deepface/deepface_weights"
+  "$AIRLOCK_ROOT/systems/backend-deepface/data"
 )
 for d in "${DIRS[@]}"; do
   if [[ -d "$d" ]]; then
@@ -292,7 +293,8 @@ if [[ "$OS" == "Linux" && "$ROOTLESS" == "true" ]]; then
   for d in "$CATALOGS_HOST_DIR" "$INPUT_HOST_DIR" "$DATABASE_HOST_DIR" \
            "$AIRLOCK_ROOT/systems/backend-deepface/uploads" \
            "$AIRLOCK_ROOT/systems/backend-deepface/database_images" \
-           "$AIRLOCK_ROOT/systems/backend-deepface/deepface_weights"; do
+           "$AIRLOCK_ROOT/systems/backend-deepface/deepface_weights" \
+           "$AIRLOCK_ROOT/systems/backend-deepface/data"; do
     [[ -d "$d" ]] || continue
     if [[ -z "$CHECKED_ANY" ]]; then
       # Only now that there is something to say.

@@ -25,7 +25,7 @@ if [[ -z "$ENGINE" ]]; then command -v docker >/dev/null 2>&1 && ENGINE=docker |
 # image | port | health path | extra run arguments
 CASES=(
   "backend|5000|/api/version|-e DISABLE_WORKFLOW_SCHEDULER=1 --tmpfs /app/database:mode=1777 --tmpfs /catalogs:mode=1777 --tmpfs /input:mode=1777 --tmpfs /storage:mode=1777 -e STORAGE_ROOT_CONTAINER=/storage"
-  "deepface|5001|/api/health|-e DEEPFACE_WORKERS=1 -e DEEPFACE_WARMUP_EMBEDDER=0"
+  "deepface|5001|/api/health|-e DEEPFACE_WORKERS=1 -e DEEPFACE_WARMUP_EMBEDDER=0 -e FACE_LABELS_DB=/app/data/face_labels.db"
   "pets|5006|/health|"
   "vision|5003|/health|"
   "geoloc|5002|/health|"

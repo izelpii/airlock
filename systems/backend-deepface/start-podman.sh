@@ -41,7 +41,8 @@ if [[ "${1:-}" == "--build" ]] || ! podman image exists "$IMAGE" 2>/dev/null; th
 fi
 
 # Ensure host volume directories exist before mounting
-mkdir -p "${SCRIPT_DIR}/uploads" "${SCRIPT_DIR}/database_images" "${SCRIPT_DIR}/deepface_weights"
+mkdir -p "${SCRIPT_DIR}/uploads" "${SCRIPT_DIR}/database_images" "${SCRIPT_DIR}/deepface_weights" \
+         "${SCRIPT_DIR}/data"
 
 # Workers sized to the memory the container can actually have, not to the cores.
 # Each worker builds its own VGG-Face (~600 MB resident; the models cannot
@@ -93,6 +94,8 @@ podman run ${AIRLOCK_DETACH_FLAG} --rm --replace --name backend-deepface -p 5001
   -v "${SCRIPT_DIR}/uploads":/app/uploads:z \
   -v "${SCRIPT_DIR}/database_images":/app/database_images:z \
   -v "${SCRIPT_DIR}/deepface_weights":/home/appuser/.deepface:z \
+  -v "${SCRIPT_DIR}/data":/app/data:z \
+  -e FACE_LABELS_DB=/app/data/face_labels.db \
   -e DEEPFACE_WORKERS="$WORKERS" \
   -e DEEPFACE_WARMUP_EMBEDDER="$WARMUP" \
   -e DEEPFACE_MODEL="$MODEL" \

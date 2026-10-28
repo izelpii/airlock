@@ -37,11 +37,6 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 #
 # kind is 'env' or 'mount'; the tuple says which side has the extra.
 KNOWN_DIFFERENCES = {
-    ('backend-deepface', 'env', 'FACE_LABELS_DB'):
-        'this service runs on the HOST via start-host.sh (Metal has no VM '
-        'passthrough); its podman path is an alternate, not the deployment',
-    ('backend-deepface', 'mount', '/app/data'):
-        'same — the host launcher is the real one',
     ('backend-geoloc', 'mount', '/app/cache'):
         'the service never reads a cache directory; the mount is vestigial',
     ('backend-vision', 'env', 'OLLAMA_MODEL'):
