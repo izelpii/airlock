@@ -257,6 +257,40 @@ ollama serve
 
 ## Installation
 
+There are two ways to install Airlock. Both run the same application on the
+same data layout, so you can move between them later.
+
+### Quick installation (Docker Compose)
+
+The fastest way: published images and one compose file, nothing to build. It
+suits a Linux server or NAS, a Raspberry Pi 4 or 5, or any machine that runs
+Docker (Engine 24+ with compose 2.24 or newer, or Docker Desktop).
+
+```bash
+mkdir airlock && cd airlock
+for f in docker-compose.yml .env.example settings.env.example install.sh \
+         docker-compose.gpu.yml docker-compose.podman.yml; do
+  curl -fsSLO "https://raw.githubusercontent.com/izelpii/airlock/main/compose/$f"
+done
+chmod +x install.sh
+./install.sh
+```
+
+The installer asks for the folder your photos are under and this machine's
+address on your network, writes `.env`, creates the data folders as you, and
+starts everything. Then:
+1. trust the certificate it created, `certs/airlock-ca.pem`, on each device;
+2. open **https://&lt;this machine's address&gt;/** to create the administrator account.
+
+Updating is `docker compose pull && docker compose up -d`. Ollama, NVIDIA,
+hardware video, podman and troubleshooting are in the
+[Docker Compose guide](compose/README.md).
+
+On a Mac, faces and video run on the CPU this way. For the Mac's GPU and
+hardware video encoder, use the script installation below.
+
+### Script installation
+
 Installing for the first time? Follow the
 [Installation guide](docs/guides/INSTALLATION.md). It covers the
 prerequisites, explains each step from getting the code to the first import,
@@ -269,7 +303,6 @@ commands and what is particular to that machine:
 | A Mac with Apple Silicon (M1 and later) | [Mac (Apple Silicon)](docs/guides/INSTALL_MAC_ARM.md) | Faces and video run natively, on the Mac's GPU and video encoder |
 | A Mac with an Intel processor | [Mac (Intel)](docs/guides/INSTALL_MAC_INTEL.md) | Video runs natively; faces run in a container |
 | A Raspberry Pi 4 or 5, 64-bit OS | [Raspberry Pi](docs/guides/INSTALL_RASPBERRY_PI.md) | Everything in containers; the Pi 4's video encoder is used when it can be |
-| **Any machine with Docker** | [Docker Compose](compose/README.md) | The easy install: published images and one compose file, nothing to build |
 
 In outline:
 1. install podman, git, curl and openssl (and, optionally, Ollama);
@@ -280,7 +313,7 @@ In outline:
 6. trust the certificate on each device;
 7. open **https://airlock.lan** to create the administrator account.
 
-Quick Start, next, is the same thing in brief, for someone who has done it before.
+Quick Start, next, is the script installation in brief, for someone who has done it before.
 
 ---
 
