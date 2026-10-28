@@ -5,7 +5,9 @@
 #   compose/ci/build.sh                          # every image, this machine only
 #   compose/ci/build.sh backend gateway          # just these
 #   compose/ci/build.sh --push --registry ghcr.io/izelpii --version 6.6.0
-#                                                # CI: both architectures, pushed
+#                                                # both architectures, pushed
+#   compose/ci/build.sh --push --arch arm64 ...  # CI: one architecture, natively
+#   compose/ci/build.sh --merge ...              # CI: then join the two
 #
 # Local builds are tagged <registry>/airlock-<service>:<tag> with registry
 # "localhost" and tag "dev" unless told otherwise - what docker-compose.yml runs
@@ -13,6 +15,11 @@
 #
 # Options
 #   --push               build linux/amd64 and linux/arm64 with buildx, and push
+#   --arch A             with --push: only linux/A (amd64 | arm64), pushed as
+#                        <version>-A, for --merge to join. One machine per
+#                        architecture, each building natively: under emulation
+#                        the arm64 builds took over six hours.
+#   --merge              join the --arch builds into the release tags (no build)
 #   --registry R         image prefix (default: localhost; ghcr.io/izelpii in CI)
 #   --version V          the release (default: the VERSION file); tags V, and with
 #                        --push also MAJOR.MINOR, latest and sha-<commit>
@@ -31,6 +38,8 @@ REPO="$(dirname "$COMPOSE")"
 IMAGES="$COMPOSE/images"
 
 PUSH=0
+ARCH=""
+MERGE=0
 REGISTRY="localhost"
 VERSION=""
 TAG="dev"
@@ -40,6 +49,8 @@ ONLY=()
 while (( $# )); do
   case "$1" in
     --push)      PUSH=1 ;;
+    --arch)      ARCH="$2"; shift ;;
+    --merge)     MERGE=1; PUSH=1 ;;
     --registry)  REGISTRY="$2"; shift ;;
     --version)   VERSION="$2"; shift ;;
     --tag)       TAG="$2"; shift ;;
@@ -59,6 +70,14 @@ if [[ -z "$ENGINE" ]]; then
 fi
 if (( PUSH )) && [[ "$ENGINE" != docker ]]; then
   echo "--push needs docker buildx (multi-architecture builds and push)" >&2
+  exit 2
+fi
+case "$ARCH" in
+  ''|amd64|arm64) ;;
+  *) echo "--arch: amd64 or arm64, not $ARCH" >&2; exit 2 ;;
+esac
+if [[ -n "$ARCH" ]] && (( ! PUSH || MERGE )); then
+  echo "--arch goes with --push (and not with --merge)" >&2
   exit 2
 fi
 if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && (( PUSH )); then
@@ -96,11 +115,16 @@ else
   SERVICES=("${ALL[@]}")
 fi
 
+release_tags() {  # the tags a release publishes, for every architecture
+  echo "$VERSION" "${VERSION%.*}" latest "sha-$REVISION"
+}
+
 tags_for() {  # tags_for <image name> <suffix> -> -t arguments
   local name="$1" suffix="$2" t
-  if (( PUSH )); then
-    local minor="${VERSION%.*}"
-    for t in "$VERSION" "$minor" latest "sha-$REVISION"; do
+  if [[ -n "$ARCH" ]]; then
+    echo "-t" "$REGISTRY/$name:$VERSION$suffix-$ARCH"
+  elif (( PUSH )); then
+    for t in $(release_tags); do
       echo "-t" "$REGISTRY/$name:$t$suffix"
     done
   else
@@ -108,12 +132,11 @@ tags_for() {  # tags_for <image name> <suffix> -> -t arguments
   fi
 }
 
-build() {  # build <platforms> <context> <dockerfile> <tag args...> -- <build args...>
-  local platforms="$1" context="$2" dockerfile="$3"; shift 3
+build() {  # build <cache scope> <platforms> <context> <dockerfile> <tag and build args...>
+  local scope="$1${ARCH:+-$ARCH}" platforms="$2" context="$3" dockerfile="$4"; shift 4
   if (( PUSH )); then
     docker buildx build --platform "$platforms" --push \
-      --cache-from "type=gha,scope=$(basename "$dockerfile")" \
-      --cache-to "type=gha,mode=max,scope=$(basename "$dockerfile")" \
+      --cache-from "type=gha,scope=$scope" --cache-to "type=gha,mode=max,scope=$scope" \
       ${NO_CACHE[@]+"${NO_CACHE[@]}"} -f "$dockerfile" "$@" "$context"
   else
     "$ENGINE" build ${NO_CACHE[@]+"${NO_CACHE[@]}"} -f "$dockerfile" "$@" "$context"
@@ -126,8 +149,25 @@ for svc in "${SERVICES[@]}"; do
   publish="$(svc_field "$svc" publish_as)"; publish="${publish:-$svc}"
   suffix="$(svc_field "$svc" tag_suffix)"
   platforms="$(svc_field "$svc" platforms | python3 -c "import json,sys; t=sys.stdin.read().strip(); print(','.join(json.loads(t)) if t else 'linux/amd64,linux/arm64')")"
+  if [[ -n "$ARCH" ]]; then
+    [[ ",$platforms," == *",linux/$ARCH,"* ]] || { echo; echo "── $svc: not built for $ARCH"; continue; }
+    platforms="linux/$ARCH"
+  fi
   echo
   echo "── $svc ($layer) ─────────────────────────────────────────────"
+
+  if (( MERGE )); then
+    # One manifest list per release tag, from the architectures this service
+    # is built for. imagetools copies nothing: the layers are already pushed.
+    sources=()
+    for p in ${platforms//,/ }; do
+      sources+=("$REGISTRY/airlock-$publish:$VERSION$suffix-${p#linux/}")
+    done
+    for t in $(release_tags); do
+      docker buildx imagetools create -t "$REGISTRY/airlock-$publish:$t$suffix" "${sources[@]}"
+    done
+    continue
+  fi
 
   # 1. The base: the application's Dockerfile as it is.
   base_args=(--build-arg "AIRLOCK_VERSION=$VERSION")
@@ -142,11 +182,11 @@ for svc in "${SERVICES[@]}"; do
   base_ref=""
   if [[ -n "$source" ]]; then
     if (( PUSH )); then
-      base_ref="$REGISTRY/airlock-$publish-base:$VERSION$suffix"
+      base_ref="$REGISTRY/airlock-$publish-base:$VERSION$suffix${ARCH:+-$ARCH}"
     else
       base_ref="$REGISTRY/airlock-$publish-base:$TAG$suffix"
     fi
-    build "$platforms" "$REPO/$source" "$REPO/$source/Dockerfile" \
+    build "$svc-base" "$platforms" "$REPO/$source" "$REPO/$source/Dockerfile" \
       -t "$base_ref" "${base_args[@]}"
   fi
 
@@ -161,13 +201,17 @@ for svc in "${SERVICES[@]}"; do
   dockerfile="$WORK/Dockerfile.$svc"
   python3 "$IMAGES/render_layer.py" "$svc" > "$dockerfile"
   # shellcheck disable=SC2046  # tags_for prints separate words on purpose
-  build "$platforms" "$context" "$dockerfile" $(tags_for "airlock-$publish" "$suffix") \
+  build "$svc" "$platforms" "$context" "$dockerfile" $(tags_for "airlock-$publish" "$suffix") \
     ${base_ref:+--build-arg "BASE_IMAGE=$base_ref"} \
     --build-arg "AIRLOCK_VERSION=$VERSION" --build-arg "AIRLOCK_REVISION=$REVISION"
 done
 
 echo
-if (( PUSH )); then
+if (( MERGE )); then
+  echo "Published v$VERSION ($(release_tags)) to $REGISTRY for: ${SERVICES[*]}"
+elif [[ -n "$ARCH" ]]; then
+  echo "Pushed v$VERSION-$ARCH to $REGISTRY for: ${SERVICES[*]} - --merge publishes it"
+elif (( PUSH )); then
   echo "Pushed v$VERSION to $REGISTRY for: ${SERVICES[*]}"
 else
   echo "Built $REGISTRY/airlock-*:$TAG for: ${SERVICES[*]}"

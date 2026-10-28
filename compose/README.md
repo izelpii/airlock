@@ -225,8 +225,9 @@ python3 -m pytest compose/tests          # the compose install stays in step wit
 
 Run local builds with `AIRLOCK_IMAGES=localhost` and `AIRLOCK_VERSION=dev`
 in `.env`. Releases are published to `ghcr.io` by
-`.github/workflows/compose-images.yml`, which calls `compose/ci/build.sh
---push`.
+`.github/workflows/compose-images.yml`. It runs `compose/ci/build.sh --push
+--arch amd64` and `--arch arm64`, each on a native machine, then
+`compose/ci/build.sh --merge` to join them into the release tags.
 
 Everything this install method needs lives in this folder. The one exception
 is that workflow file, which GitHub requires in `.github/`. The design is in
