@@ -87,7 +87,7 @@ The full explanation, with the history and each concept in depth, is in
 
 ### Organisation & Discovery
 - **Dashboard** — The open catalog at a glance: totals, the last twelve months, the library over time, what needs attention, recent activity, coverage of the automatic work, on this day, storage and backups
-- **Search and saved searches** — One box and filters (names, dates, people and pets, places, events, albums, camera, SHA-256 …) over every file, including copies an import turned away as duplicates; keep a search and the files chosen from it as a saved search
+- **Search and saved searches** — One box and filters (names, dates, people and pets, places, events, albums, camera, SHA-256 …) over every file, including copies an import turned away as duplicates; keep a search and the files chosen from it as a saved search, and work on its photos from a tool panel: select them (drag a rectangle, a page, or all) and change their dates in one step
 - **Calendar view** — The catalog as a heatmap with a square per day; a click opens that day's events
 - **Basic photo editing** — Turn or flip a photo; the original is never written to, and its derivatives, face and pet boxes follow the edit
 - **Events** — Photos grouped by time gaps

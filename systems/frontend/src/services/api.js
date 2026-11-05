@@ -487,6 +487,10 @@ export const savedSearchAPI = {
   files: (catalogId, id, params) =>
     api.get(`/catalogs/${catalogId}/saved-searches/${id}/files`, { params }),
   addFiles: (catalogId, id, body) => api.post(`/catalogs/${catalogId}/saved-searches/${id}/files`, body),
+  // Every file still in the catalog, with its date, for "Select all"
+  // (saved-search-tools-spec.md section 6.3): {files: [{file_id, taken,
+  // file_type}], total, truncated}.
+  fileIds: (catalogId, id) => api.get(`/catalogs/${catalogId}/saved-searches/${id}/files/ids`),
   removeFiles: (catalogId, id, fileIds) =>
     api.delete(`/catalogs/${catalogId}/saved-searches/${id}/files`, { data: { file_ids: fileIds } }),
 };
@@ -715,10 +719,15 @@ export const photoAPI = {
   // one entry per target date. Answers 202 {batch_id, file_count} at once and
   // does the work in the background; 409 catalog_busy while an import runs.
   // `eventId` is only recorded on the batch, so the event page can find it
-  // again after Create Events has replaced the event.
-  updateDates: (catalogId, eventId, changes, rebuildEvents = true) =>
+  // again after Create Events has replaced the event. `savedSearchId` is the
+  // saved search the batch came from (saved-search-tools-spec.md section 6.1):
+  // recorded on the batch, and on the saved search as its last operation.
+  // Either may be null.
+  updateDates: (catalogId, eventId, changes, rebuildEvents = true, savedSearchId = null) =>
     api.post(`/catalogs/${catalogId}/photos/dates`, {
-      event_id: Number(eventId), changes, rebuild_events: rebuildEvents,
+      event_id: eventId == null ? null : Number(eventId),
+      ...(savedSearchId == null ? {} : { saved_search_id: Number(savedSearchId) }),
+      changes, rebuild_events: rebuildEvents,
     }),
 
   // One date batch: status (running | rebuilding | completed | interrupted |
@@ -731,6 +740,13 @@ export const photoAPI = {
   latestDateBatch: (catalogId, eventId) =>
     api.get(`/catalogs/${catalogId}/photos/dates/batches`, {
       params: { event_id: eventId, latest: 1 },
+    }),
+
+  // The newest batch started from a saved search, or 404: its page shows one
+  // still running when it opens (saved-search-tools-spec.md section 5.5).
+  latestDateBatchForSavedSearch: (catalogId, savedSearchId) =>
+    api.get(`/catalogs/${catalogId}/photos/dates/batches`, {
+      params: { saved_search_id: savedSearchId, latest: 1 },
     }),
 
   // Edit a file's description. PUT, and /files/ rather than /photos/ — the

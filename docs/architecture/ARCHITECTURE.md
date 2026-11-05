@@ -575,3 +575,4 @@ deleted from the source — only after the database commit. Duplicates go to
 | v6.3 | Mass transfer; transfers register as `airlock.app`; backups drawn on the workflow diagram | Album transfers, Workflow engine |
 | v6.4 | License notice; the pre-rename Shoebox names no longer accepted (v6.4.5) | License notice, Security |
 | v6.6 | Install with Docker Compose: published images, any user's ids (`compose/`) | `docs/specs/compose-install-spec.md` |
+| v6.7 | A saved search's tool panel: select across pages, change the dates of the selection | `documentation/specs/saved-search-tools-spec.md` |

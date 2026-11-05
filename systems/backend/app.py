@@ -7772,6 +7772,11 @@ def update_photo_dates(catalog_id):
     event_id = body.get('event_id')
     if event_id is not None and not _is_id(event_id):
         return jsonify({'error': 'event_id must be an id'}), 400
+    # A saved search's Change date tool (saved-search-tools-spec.md 6.1): the
+    # batch is recorded on it, and it is an operation on the saved search.
+    saved_search_id = body.get('saved_search_id')
+    if saved_search_id is not None and not _is_id(saved_search_id):
+        return jsonify({'error': 'saved_search_id must be an id'}), 400
     rebuild_events = body.get('rebuild_events', True) is not False
 
     catalog = Catalog.get_by_id(catalog_id)
@@ -7783,15 +7788,22 @@ def update_photo_dates(catalog_id):
     requested = [fid for file_ids, _ in changes for fid in file_ids]
     conn = CatalogDatabase(catalog.target_directory).get_connection()
     try:
+        if saved_search_id is not None:
+            import saved_searches
+            saved_searches.ensure_schema(conn)
+            if _saved_search_or_404(conn, saved_search_id) is None:
+                return jsonify({'error': 'Saved search not found'}), 404
         if _import_running(conn):
             return jsonify({'error': 'catalog_busy',
                             'message': 'An import is running in this catalog. '
                                        'Confirm again once it has finished.'}), 409
         cur = conn.execute(
-            "INSERT INTO date_change_batches (event_id, status, file_ids, total) "
-            "VALUES (?, 'running', ?, ?)",
-            (event_id, _json.dumps(requested), len(requested)))
+            "INSERT INTO date_change_batches (event_id, saved_search_id, status, file_ids, total) "
+            "VALUES (?, ?, 'running', ?, ?)",
+            (event_id, saved_search_id, _json.dumps(requested), len(requested)))
         batch_id = cur.lastrowid
+        if saved_search_id is not None:
+            saved_searches.record_operation(conn, saved_search_id, 'change_date')
         conn.commit()
     finally:
         conn.close()
@@ -7825,9 +7837,10 @@ def get_photo_date_batch(catalog_id, batch_id):
 @app.route('/api/catalogs/<int:catalog_id>/photos/dates/batches', methods=['GET'])
 def list_photo_date_batches(catalog_id):
     """
-    The batches opened on an event, newest first; with latest=1, just the
-    newest. The event page asks when its event id has vanished in a rebuild
-    (section 4.5).
+    The batches opened on an event, or started from a saved search, newest
+    first; with latest=1, just the newest. The event page asks when its event
+    id has vanished in a rebuild (section 4.5); a saved search's page asks on
+    opening, to show a batch still running (saved-search-tools-spec.md 5.5).
     """
     catalog = Catalog.get_by_id(catalog_id)
     if not catalog:
@@ -7835,17 +7848,22 @@ def list_photo_date_batches(catalog_id):
     if not catalog.target_directory:
         return jsonify({'error': 'Catalog target directory not set'}), 400
     event_id = request.args.get('event_id', type=int)
-    if event_id is None:
-        return jsonify({'error': 'event_id is required'}), 400
+    saved_search_id = request.args.get('saved_search_id', type=int)
+    if event_id is not None:
+        column, key, what = 'event_id', event_id, 'event'
+    elif saved_search_id is not None:
+        column, key, what = 'saved_search_id', saved_search_id, 'saved search'
+    else:
+        return jsonify({'error': 'event_id or saved_search_id is required'}), 400
     latest = request.args.get('latest') == '1'
     conn = CatalogDatabase(catalog.target_directory).get_connection()
     try:
         rows = conn.execute(
-            'SELECT * FROM date_change_batches WHERE event_id = ? ORDER BY id DESC LIMIT ?',
-            (event_id, 1 if latest else 20)).fetchall()
+            f'SELECT * FROM date_change_batches WHERE {column} = ? ORDER BY id DESC LIMIT ?',
+            (key, 1 if latest else 20)).fetchall()
         if latest:
             if not rows:
-                return jsonify({'error': 'No batch for this event'}), 404
+                return jsonify({'error': f'No batch for this {what}'}), 404
             return jsonify(_date_batch_payload(catalog, conn, rows[0]))
         return jsonify([_date_batch_payload(catalog, conn, r) for r in rows])
     finally:
@@ -11386,6 +11404,27 @@ def saved_search_files(catalog_id, sid):
     for f in files:
         f['thumbnail_url'] = _thumb_url(catalog_id, f['file_id'])
     return jsonify({'files': files, 'total': total, 'limit': limit, 'offset': offset})
+
+
+@app.route('/api/catalogs/<int:catalog_id>/saved-searches/<int:sid>/files/ids', methods=['GET'])
+def saved_search_file_ids(catalog_id, sid):
+    """
+    Every file of a saved search still in the catalog, with its date, for
+    "Select all" (saved-search-tools-spec.md section 6.3). Reading it is not
+    activity on the saved search, so the idle clock is left alone.
+    """
+    import saved_searches
+    import search
+    conn, _, err = _search_conn(catalog_id)
+    if err:
+        return err
+    try:
+        if _saved_search_or_404(conn, sid) is None:
+            return jsonify({'error': 'Saved search not found'}), 404
+        files, total, truncated = saved_searches.file_ids(conn, sid, search.ADD_CAP)
+    finally:
+        conn.close()
+    return jsonify({'files': files, 'total': total, 'truncated': truncated})
 
 
 @app.route('/api/catalogs/<int:catalog_id>/saved-searches/<int:sid>/files', methods=['POST'])

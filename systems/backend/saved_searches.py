@@ -78,6 +78,17 @@ def touch(conn, sid):
                  (t, t, sid))
 
 
+def record_operation(conn, sid, operation):
+    """An operation was done to the saved search's photos (a date change): it
+    restarts the idle clock and is remembered as the last operation. It does
+    not mark the saved search done - that is for operations that consume it
+    (saved-search-tools-spec.md section 5.6)."""
+    t = _iso(_now())
+    conn.execute('UPDATE saved_searches SET last_activity_at = ?, updated_at = ?, '
+                 'last_operation = ?, last_operation_at = ? WHERE id = ?',
+                 (t, t, operation, t, sid))
+
+
 def public(row, counts=None, now=None):
     d = dict(row)
     d.update(lifecycle(row, now))
@@ -165,6 +176,23 @@ def files_page(conn, sid, limit=60, offset=0):
                          (sid,)).fetchone()[0]
     return [dict(file_id=r[0], added_at=r[1], file_name=r[2], file_type=r[3], taken=r[4],
                  removed_at=r[5]) for r in rows], total
+
+
+def file_ids(conn, sid, limit=10000):
+    """Every file of the saved search still in the catalog, in files_page's
+    order, for "Select all" (saved-search-tools-spec.md section 6.3).
+    Returns (files, total, truncated)."""
+    rows = conn.execute(
+        'SELECT ssf.file_id, fc.master_datetime, fc.file_type FROM saved_search_files ssf '
+        'JOIN file_contents fc ON fc.id = ssf.file_id '
+        'WHERE ssf.saved_search_id = ? AND fc.removed_at IS NULL '
+        'ORDER BY fc.master_datetime DESC, fc.id DESC LIMIT ?',
+        (sid, limit + 1)).fetchall()
+    total = conn.execute(
+        'SELECT COUNT(*) FROM saved_search_files ssf JOIN file_contents fc ON fc.id = ssf.file_id '
+        'WHERE ssf.saved_search_id = ? AND fc.removed_at IS NULL', (sid,)).fetchone()[0]
+    return ([dict(file_id=r[0], taken=r[1], file_type=r[2]) for r in rows[:limit]],
+            total, len(rows) > limit)
 
 
 def delete(conn, sid):

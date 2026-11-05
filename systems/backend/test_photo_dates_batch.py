@@ -483,3 +483,105 @@ def test_the_single_photo_endpoint_behaves_as_before(client, catalog):
                       json={'datetime': '2003-01-01T12:00', 'timezone': 'Nope/Nope'}).status_code == 400
     assert client.put('/api/catalogs/1/photos/99999/date',
                       json={'datetime': '2003-01-01T12:00', 'timezone': NY}).status_code == 404
+
+
+# ─── From a saved search (saved-search-tools-spec.md section 6) ───────────────
+
+def _add_saved_search(catalog, file_ids, name='To fix'):
+    import saved_searches
+    conn = _db(catalog)
+    saved_searches.ensure_schema(conn)
+    sid = saved_searches.create(conn, name, 'q=x')
+    saved_searches.add_files(conn, sid, file_ids)
+    conn.execute("UPDATE saved_searches SET last_activity_at = '2026-01-01T00:00:00+00:00', "
+                 "updated_at = '2026-01-01T00:00:00+00:00' WHERE id = ?", (sid,))
+    conn.commit()
+    conn.close()
+    return sid
+
+
+def _saved_search(catalog, sid):
+    conn = _db(catalog)
+    row = dict(conn.execute('SELECT * FROM saved_searches WHERE id = ?', (sid,)).fetchone())
+    conn.close()
+    return row
+
+
+def test_a_saved_search_batch_is_recorded_on_it_as_an_operation(client, catalog):
+    a = _add_file(catalog, 'a.jpg')
+    b = _add_file(catalog, 'b.jpg', sha='0000000002')
+    sid = _add_saved_search(catalog, [a, b])
+
+    # Each file keeps its own time of day: one entry per distinct time.
+    r = _post(client, [
+        {'file_ids': [a], 'datetime': '2019-06-01T09:41:07', 'timezone': NY},
+        {'file_ids': [b], 'datetime': '2019-06-01T15:02:55', 'timezone': NY},
+    ], saved_search_id=sid, rebuild_events=False)
+    assert r.status_code == 202
+    batch = _wait(client, r.get_json()['batch_id'])
+    assert batch['saved_search_id'] == sid
+    assert batch['event_id'] is None
+    assert _row(catalog, a)['master_datetime'] == '2019-06-01T09:41:07-04:00'
+    assert _row(catalog, b)['master_datetime'] == '2019-06-01T15:02:55-04:00'
+
+    s = _saved_search(catalog, sid)
+    assert s['last_operation'] == 'change_date'
+    assert s['last_operation_at'] and s['last_activity_at'] > '2026-01-02'
+    assert s['status'] == 'open'                       # an operation on it, not one that consumes it
+
+    latest = client.get(f'/api/catalogs/1/photos/dates/batches?saved_search_id={sid}&latest=1')
+    assert latest.status_code == 200
+    assert latest.get_json()['id'] == batch['id']
+
+
+def test_an_unknown_saved_search_is_refused_before_anything_changes(client, catalog):
+    a = _add_file(catalog, 'a.jpg')
+    before = _row(catalog, a)['master_datetime']
+    r = _post(client, [{'file_ids': [a], 'datetime': '2019-06-01T12:00', 'timezone': NY}],
+              saved_search_id=424242)
+    assert r.status_code == 404
+    assert _row(catalog, a)['master_datetime'] == before
+    conn = _db(catalog)
+    assert conn.execute('SELECT COUNT(*) FROM date_change_batches').fetchone()[0] == 0
+    conn.close()
+    assert _post(client, [{'file_ids': [a], 'datetime': '2019-06-01T12:00', 'timezone': NY}],
+                 saved_search_id='x').status_code == 400
+
+
+def test_batches_are_found_by_event_or_saved_search_and_one_is_required(client, catalog):
+    assert client.get('/api/catalogs/1/photos/dates/batches?latest=1').status_code == 400
+    assert client.get('/api/catalogs/1/photos/dates/batches?saved_search_id=9&latest=1').status_code == 404
+
+
+def test_an_older_catalog_gains_the_saved_search_column(catalog):
+    conn = _db(catalog)
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(date_change_batches)')}
+    conn.close()
+    assert 'saved_search_id' in cols
+
+
+def test_select_all_lists_every_file_still_in_the_catalog(client, catalog):
+    a = _add_file(catalog, 'a.jpg', day='20190303')
+    b = _add_file(catalog, 'b.jpg', day='20210709', sha='0000000002')
+    gone = _add_file(catalog, 'c.jpg', sha='0000000003', removed=True)
+    sid = _add_saved_search(catalog, [a, b, gone])
+
+    r = client.get(f'/api/catalogs/1/saved-searches/{sid}/files/ids')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert [f['file_id'] for f in body['files']] == [b, a]      # newest first, removed left out
+    assert body['files'][0]['taken'].startswith('2021-07-09')
+    assert body['total'] == 2 and body['truncated'] is False
+    assert _saved_search(catalog, sid)['last_activity_at'].startswith('2026-01-01')  # reading is not activity
+    assert client.get('/api/catalogs/1/saved-searches/424242/files/ids').status_code == 404
+
+
+def test_select_all_reports_when_it_is_truncated(catalog):
+    import saved_searches
+    a = _add_file(catalog, 'a.jpg')
+    b = _add_file(catalog, 'b.jpg', sha='0000000002')
+    sid = _add_saved_search(catalog, [a, b])
+    conn = _db(catalog)
+    files, total, truncated = saved_searches.file_ids(conn, sid, limit=1)
+    conn.close()
+    assert len(files) == 1 and total == 2 and truncated is True

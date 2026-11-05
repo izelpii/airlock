@@ -984,14 +984,16 @@ class CatalogDatabase:
         conn.commit()
 
         # A batch of photo date changes from the event date editor
-        # (mass-edit-event-photo-dates-spec.md section 5.3). The work runs in
-        # the background, so this row is how the event page follows it - and
-        # how it finds where the photos went once the event it was opened on
-        # has been rebuilt away.
+        # (mass-edit-event-photo-dates-spec.md section 5.3) or a saved search's
+        # Change date tool (saved-search-tools-spec.md section 6.2). The work
+        # runs in the background, so this row is how the page follows it - and
+        # how the event page finds where the photos went once the event it was
+        # opened on has been rebuilt away.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS date_change_batches (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_id     INTEGER,
+                saved_search_id INTEGER,
                 -- running | rebuilding | completed | interrupted | failed
                 status       TEXT NOT NULL,
                 file_ids     TEXT NOT NULL,
@@ -1006,6 +1008,13 @@ class CatalogDatabase:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_date_batches_event
             ON date_change_batches (event_id, id)
+        ''')
+        _batch_cols = {r[1] for r in cursor.execute('PRAGMA table_info(date_change_batches)')}
+        if 'saved_search_id' not in _batch_cols:
+            cursor.execute('ALTER TABLE date_change_batches ADD COLUMN saved_search_id INTEGER')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_date_batches_saved_search
+            ON date_change_batches (saved_search_id, id)
         ''')
         conn.commit()
 
