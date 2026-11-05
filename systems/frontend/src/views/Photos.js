@@ -40,6 +40,7 @@ import BasicEditorTools from '../components/BasicEditorTools';
 import { API_HOST, VISION_HOST, PEOPLE_PHOTOS_BASE_URL, galleryThumbUrl } from '../config';
 import { Filmstrip } from '../components/Filmstrip';
 import CatalogFileCard from '../components/CatalogFileCard';
+import { describeRebuildOf } from '../utils/eventsRebuild';
 
 // ─── Date helpers (same as PhotoDetail) ──────────────────────────────────────
 
@@ -229,6 +230,18 @@ const Photos = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCatalog]);
 
+  // Back on this page (another tab, another window): dates may have changed
+  // meanwhile, so re-read which days have photos.
+  const refreshCalendarRef = useRef(null);
+  refreshCalendarRef.current = () => refreshCalendar(taggingCatalog);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshCalendarRef.current?.();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
   // When the URL fileId param changes while the component is already mounted.
   // (e.g. navigated here from another page without a remount, or user clicks a
   // photo in EventDetail while Photos is already open on a different day.)
@@ -367,6 +380,42 @@ const Photos = () => {
     return scope.open(catalogId, params, { around });
   };
 
+  // The year/month/day navigation, from the calendar's counts alone - no
+  // photographs needed.
+  const applyCalendar = (days) => {
+    const ymd = {};
+    const ym = {};
+    for (const [y, m, d] of days) {
+      const yr = String(y);
+      const mo = calMonthToUi(m);
+      ymd[yr] = ymd[yr] ?? {};
+      ymd[yr][mo] = ymd[yr][mo] ?? [];
+      if (!ymd[yr][mo].includes(d)) ymd[yr][mo].push(d);
+      ym[yr] = ym[yr] ?? [];
+      if (!ym[yr].includes(mo)) ym[yr].push(mo);
+    }
+    for (const yr of Object.keys(ymd)) {
+      ym[yr].sort((x, z) => x - z);
+      for (const mo of Object.keys(ymd[yr])) ymd[yr][mo].sort((x, z) => x - z);
+    }
+    setAvailableYearsMonthsDays(ymd);
+    setAvailableYearsMonths(ym);
+  };
+
+  // The navigation again, without moving the page: the calendar is read once
+  // when the page opens, so a date changed meanwhile - on another tab, or a
+  // batch from a saved search - had a year, month or day the selectors did
+  // not offer until a reload.
+  const refreshCalendar = async (catalogId) => {
+    if (!catalogId) return;
+    try {
+      const cal = await photoAPI.calendar(catalogId);
+      applyCalendar(cal.data?.days ?? []);
+    } catch {
+      // Keep the navigation we have.
+    }
+  };
+
   const loadAllPhotosAndGroup = async (catalogId, { targetFileId = null, targetDate = null } = {}) => {
     if (!catalogId) return;
     setYearsMonthsLoading(true);
@@ -375,25 +424,7 @@ const Photos = () => {
     try {
       const cal = await photoAPI.calendar(catalogId);
       const days = cal.data?.days ?? [];
-
-      // The navigation, from counts alone - no photographs needed.
-      const ymd = {};
-      const ym = {};
-      for (const [y, m, d] of days) {
-        const yr = String(y);
-        const mo = calMonthToUi(m);
-        ymd[yr] = ymd[yr] ?? {};
-        ymd[yr][mo] = ymd[yr][mo] ?? [];
-        if (!ymd[yr][mo].includes(d)) ymd[yr][mo].push(d);
-        ym[yr] = ym[yr] ?? [];
-        if (!ym[yr].includes(mo)) ym[yr].push(mo);
-      }
-      for (const yr of Object.keys(ymd)) {
-        ym[yr].sort((x, z) => x - z);
-        for (const mo of Object.keys(ymd[yr])) ymd[yr][mo].sort((x, z) => x - z);
-      }
-      setAvailableYearsMonthsDays(ymd);
-      setAvailableYearsMonths(ym);
+      applyCalendar(days);
 
       if (days.length === 0) {
         scope.reset();
@@ -1267,12 +1298,16 @@ const Photos = () => {
     setDateError(null);
     try {
       const isoLocal = `${dateInput}T${timeInput}`;
-      await photoAPI.updateDate(taggingCatalog, currentImage.id, isoLocal, tzInput);
+      const saved = await photoAPI.updateDate(taggingCatalog, currentImage.id, isoLocal, tzInput);
       // Reload the photo detail so the date card reflects the new value
       const r = await photoAPI.getById(taggingCatalog, currentImage.id);
       setPhotoDetail(r.data);
       setEditingDate(false);
-      setDateSuccess('Date updated. File has been renamed and moved.');
+      setDateSuccess(`Date updated. File has been renamed and moved. ${describeRebuildOf(saved.data)}`.trim());
+      // Follow the photo to its new day. The navigation is re-read with it:
+      // the new date's year, month or day may have had no photos until now,
+      // so the selectors had nowhere to find it.
+      await loadAllPhotosAndGroup(taggingCatalog, { targetFileId: currentImage.id });
     } catch (err) {
       setDateError(err.response?.data?.error || 'Failed to update date');
     } finally {

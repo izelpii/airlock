@@ -291,14 +291,19 @@ def next_nightly(now=None):
     return target.astimezone(local_now.tzinfo).replace(tzinfo=None)
 
 
+def seconds_until_nightly(now=None):
+    """Whole seconds until the next NIGHTLY_AT, rounded up: never a fraction of
+    a second before the hour, and never 0 (0 means "now" to enqueue)."""
+    from datetime import datetime
+    local_now = now or datetime.now().astimezone()
+    wait = (next_nightly(local_now) - local_now.replace(tzinfo=None)).total_seconds()
+    return max(1, int(math.ceil(wait)))
+
+
 def delay_for(trigger_name, script, now=None):
     """(seconds to wait, overnight?) for one workflow of a trigger's chain."""
     if (trigger_name, script) in NIGHTLY:
-        from datetime import datetime
-        local_now = now or datetime.now().astimezone()
-        wait = (next_nightly(local_now) - local_now.replace(tzinfo=None)).total_seconds()
-        # Rounded up: never a fraction of a second before the hour.
-        return max(1, int(math.ceil(wait))), True
+        return seconds_until_nightly(now), True
     return quiet_seconds(trigger_name), False
 
 

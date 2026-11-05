@@ -53,6 +53,7 @@ import 'leaflet/dist/leaflet.css';
 import { eventAPI, locationAPI, photoAPI, userSettingsAPI } from '../services/api';
 import socketService from '../services/socket';
 import { API_HOST, galleryThumbUrl } from '../config';
+import { describeEventsRebuild } from '../utils/eventsRebuild';
 // DEAD CODE — MARKED FOR DELETION: the default `api` client, faceDetectionAPI,
 // VISION_HOST and PEOPLE_PHOTOS_BASE_URL are reached only from the commented-out
 // face tagging modal below. See the banner on that region.
@@ -315,6 +316,7 @@ const EventDetail = () => {
       target: best ? { id: best.event.id, name: best.event.name } : null,
       failed: b.result?.failed || [],
       rebuildStatus: b.result?.rebuild_status || null,
+      rebuildAt: b.result?.rebuild_at || null,
     };
     const state = { dateBatchResult: result };
     if (stillHere) {
@@ -1518,9 +1520,8 @@ const EventDetail = () => {
       let text;
       if (!b || b.status === 'running') {
         text = b && b.total
-          ? `Updating the dates of ${plural(b.total, 'photo')} (${b.done || 0}/${b.total})… `
-            + 'Events will be rebuilt when this finishes.'
-          : 'Updating the dates of the photos… Events will be rebuilt when this finishes.';
+          ? `Updating the dates of ${plural(b.total, 'photo')} (${b.done || 0}/${b.total})…`
+          : 'Updating the dates of the photos…';
       } else if (b.status === 'rebuilding') {
         text = 'Rebuilding events…';
       } else {
@@ -1569,6 +1570,9 @@ const EventDetail = () => {
         )}
         {rebuildProblem && (
           <div>Events were not rebuilt: {rebuildProblem}.</div>
+        )}
+        {describeEventsRebuild(r.rebuildStatus, r.rebuildAt) && (
+          <div data-testid="events-rebuild-note">{describeEventsRebuild(r.rebuildStatus, r.rebuildAt)}</div>
         )}
         {failed.length > 0 && (
           <div>

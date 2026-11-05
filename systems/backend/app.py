@@ -7332,11 +7332,17 @@ def _apply_photo_date(conn, catalog, photo_id, local_dt):
     }
 
 
-def _place_in_nearest_event(conn, photo_id, local_dt):
+def _place_in_nearest_event(conn, photo_id, local_dt, auto_only=False):
     """
     Move one re-dated file to the event its new date belongs in: out of every
     event it was in, then into the nearest event within six hours, or into a
     new Manual event of its own. Commits.
+
+    `auto_only`: a stand-in until tonight's Create Events (a date batch). Only
+    an Auto event is joined, since Create Events rebuilds those and so corrects
+    the guess; a Manual event would keep the file for good. No event is created:
+    a file with no Auto event near its new date waits for the rebuild in none
+    ('no_event').
 
     Returns (event_action, event_id, event_name).
     """
@@ -7386,9 +7392,10 @@ def _place_in_nearest_event(conn, photo_id, local_dt):
            WHERE datetime(?) BETWEEN
                  datetime(start_time, '-6 hours') AND
                  datetime(end_time,   '+6 hours')
+             AND (? = 0 OR COALESCE(type, 'Auto') = 'Auto')
            ORDER BY ABS(strftime('%s', ?) - strftime('%s', start_time)) ASC
            LIMIT 1''',
-        (new_iso_utc, new_iso_utc)
+        (new_iso_utc, 1 if auto_only else 0, new_iso_utc)
     )
     matching_event = cursor.fetchone()
 
@@ -7415,6 +7422,8 @@ def _place_in_nearest_event(conn, photo_id, local_dt):
             (new_count, new_iso_utc, new_iso_utc, event_id)
         )
         event_action = 'added_to_existing'
+    elif auto_only:
+        event_action = 'no_event'
     else:
         # Step 8e — no existing event covers the new date: create a new Manual event.
         ev_start = local_dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -7481,6 +7490,9 @@ def update_photo_date(catalog_id, photo_id):
         'event_action': event_action,
         'event_id':     event_id,
         'event_name':   event_name,
+        # The placement above is the quick answer; tonight's Create Events
+        # regroups the photo with its new neighbours properly.
+        'events_rebuild': _schedule_events_rebuild(catalog, {'photo': photo_id}),
     })
     return jsonify(update)
 
@@ -7526,6 +7538,45 @@ def _create_events_workflow(catalog):
         if os.path.basename(wf.get('python_script') or '') == 'ev_extract_events.py':
             return wf
     return None
+
+
+def _schedule_events_rebuild(catalog, trigger_detail):
+    """
+    Queue Create Events for tonight's NIGHTLY_AT after a date change (owner,
+    2026-11-05). Rebuilding every Auto event is heavy, it starts the face
+    re-ranking chain behind it, and someone fixing dates fixes several in a
+    row, so it waits for the night like Match Faces by Appearance does. It can
+    be started at once from the queue ("now") or the Workflows page.
+
+    Coalesced: a Create Events already waiting takes this request rather than
+    a second row being added. One waiting for the night stays at the night;
+    one already due (an import queued it) still runs now.
+
+    Returns {'status': 'scheduled' | 'queued', 'queue_id', 'run_at'}, or None
+    when the catalog has no Create Events workflow. 'queued' means it joined a
+    row that runs as soon as the queue reaches it; run_at is then None.
+    """
+    workflow = _create_events_workflow(catalog)
+    if not workflow:
+        return None
+    db_path = _queue_db_path(catalog)
+    queue_id, _created = workflow_scheduler.enqueue(
+        db_path, dict(workflow),
+        trigger_source='date_change',
+        trigger_detail={**trigger_detail, 'nightly': True},
+        delay_seconds=workflow_triggers.seconds_until_nightly(),
+        overnight=True)
+    item = workflow_scheduler.get_item(db_path, queue_id) or {}
+    run_at = None
+    if item.get('not_before'):
+        try:
+            # not_before is the process's naive local time: say which zone.
+            run_at = _datetime.fromisoformat(item['not_before']).astimezone().isoformat()
+        except (TypeError, ValueError):
+            run_at = None
+    _emit_queue(catalog)
+    return {'status': 'scheduled' if run_at else 'queued',
+            'queue_id': queue_id, 'run_at': run_at}
 
 
 def _import_running(conn):
@@ -7692,27 +7743,23 @@ def _run_date_batch(catalog, batch_id, changes, rebuild_events):
         _recount_events(cursor, sorted(left))
         conn.commit()
 
-        # ── 4. Rebuild events, or place each file the single-photo way ────────
+        # ── 4. Schedule the events rebuild, and place each file until then ────
+        # Create Events runs tonight, not now (_schedule_events_rebuild). The
+        # batch is complete once the dates are; until the rebuild each file
+        # joins the nearest Auto event, which the rebuild then corrects.
         status, queue_id = 'completed', None
-        workflow = _create_events_workflow(catalog) if (rebuild_events and updated) else None
-        if workflow:
-            queue_id, _created = workflow_scheduler.enqueue(
-                _queue_db_path(catalog), dict(workflow),
-                trigger_source='date_change', trigger_detail={'date_batch': batch_id})
-            workflow_scheduler.promote(_queue_db_path(catalog), queue_id)
-            if _scheduler:
-                _scheduler.kick()
-            _emit_queue(catalog)
-            status = 'rebuilding'
-        else:
-            # rebuild_events off, or a catalog with no Create Events workflow:
-            # no file may be left without an event.
-            for fid, local_dt in placed_dt.items():
-                _place_in_nearest_event(conn, fid, local_dt)
+        rebuild = (_schedule_events_rebuild(catalog, {'date_batch': batch_id})
+                   if (rebuild_events and updated) else None)
+        for fid, local_dt in placed_dt.items():
+            _place_in_nearest_event(conn, fid, local_dt, auto_only=bool(rebuild))
 
         result = {'updated': updated, 'failed': failed,
                   'detached_from_events': sorted(left)}
-        if rebuild_events and updated and not workflow:
+        if rebuild:
+            queue_id = rebuild['queue_id']
+            result['rebuild_status'] = rebuild['status']
+            result['rebuild_at'] = rebuild['run_at']
+        elif rebuild_events and updated:
             result['rebuild_status'] = 'no_create_events_workflow'
         conn.execute(
             "UPDATE date_change_batches SET status = ?, result_json = ?, queue_id = ?, "

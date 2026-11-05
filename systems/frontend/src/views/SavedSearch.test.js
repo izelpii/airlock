@@ -139,12 +139,18 @@ it('follows a running batch from the page opening to its result, then reloads', 
 
   mockState.batch = {
     id: 9, status: 'completed', done: 2, total: 2,
-    result: { updated: [{ file_id: 1 }], failed: [{ file_id: 5, error: 'file_move_conflict', message: 'exists' }] },
+    result: {
+      updated: [{ file_id: 1 }],
+      failed: [{ file_id: 5, error: 'file_move_conflict', message: 'exists' }],
+      rebuild_status: 'scheduled',
+      rebuild_at: '2026-11-06T03:00:00-05:00',
+    },
   };
   await act(async () => { await new Promise((r) => setTimeout(r, 2100)); });
   await settle();
   expect(banner()).toContain('Done. 1 date changed.');
   expect(banner()).toContain('1 file could not be changed');
+  expect(banner()).toContain('Events will be rebuilt tonight');
 });
 
 it('shows nothing for a batch that finished long ago', async () => {

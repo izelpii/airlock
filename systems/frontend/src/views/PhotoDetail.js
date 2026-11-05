@@ -26,6 +26,7 @@ import {
 import { photoAPI } from '../services/api';
 import { API_HOST } from '../config';
 import { getTimezoneOptions, getBrowserTimezone } from '../utils/timezones';
+import { describeRebuildOf } from '../utils/eventsRebuild';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,10 +142,10 @@ const PhotoDetail = () => {
     setDateError(null);
     try {
       const isoLocal = `${dateInput}T${timeInput}`;   // "YYYY-MM-DDTHH:MM:SS"
-      await photoAPI.updateDate(catalogId, photoId, isoLocal, tzInput);
+      const saved = await photoAPI.updateDate(catalogId, photoId, isoLocal, tzInput);
       await loadPhoto();                               // re-fetch fresh photo data
       setEditingDate(false);
-      setDateSuccess('Date updated. File has been renamed and moved.');
+      setDateSuccess(`Date updated. File has been renamed and moved. ${describeRebuildOf(saved.data)}`.trim());
     } catch (err) {
       setDateError(err.response?.data?.error || 'Failed to update date');
     } finally {

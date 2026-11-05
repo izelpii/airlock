@@ -173,6 +173,22 @@ def _add_create_events_workflow(catalog, name='Create Events'):
     return cur.lastrowid
 
 
+def _is_tonight(not_before):
+    """workflow_queue.not_before for a row waiting for tonight's NIGHTLY_AT:
+    the hour itself, give or take the second the delay is rounded up by."""
+    import datetime as dt
+    import workflow_triggers
+    gap = dt.datetime.fromisoformat(not_before) - workflow_triggers.next_nightly()
+    return dt.timedelta(0) <= gap < dt.timedelta(seconds=5)
+
+
+def _queue_rows(catalog):
+    conn = _db(catalog)
+    rows = [dict(r) for r in conn.execute('SELECT * FROM workflow_queue ORDER BY id')]
+    conn.close()
+    return rows
+
+
 def _wait(client, batch_id, timeout=10):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -206,7 +222,7 @@ NY = 'America/New_York'
 
 # ─── The batch ────────────────────────────────────────────────────────────────
 
-def test_a_batch_redates_every_file_and_queues_create_events(client, catalog):
+def test_a_batch_redates_every_file_and_schedules_create_events_for_the_night(client, catalog):
     a = _add_file(catalog, '200301010600_arboritro 1.jpg')
     b = _add_file(catalog, 'b.jpg', sha='0000000002')
     c = _add_file(catalog, 'c.jpg', sha='0000000003')
@@ -221,7 +237,10 @@ def test_a_batch_redates_every_file_and_queues_create_events(client, catalog):
     assert r.get_json()['file_count'] == 3
 
     batch = _wait(client, r.get_json()['batch_id'])
-    assert batch['status'] == 'rebuilding'
+    # Complete once the dates are: the rebuild waits for the night.
+    assert batch['status'] == 'completed'
+    assert batch['result']['rebuild_status'] == 'scheduled'
+    assert batch['result']['rebuild_at']
     assert batch['event_id'] == event
     assert batch['file_ids'] == [a, b, c]
     assert batch['done'] == batch['total'] == 3
@@ -240,12 +259,15 @@ def test_a_batch_redates_every_file_and_queues_create_events(client, catalog):
     assert alt['alternative_file_path'].startswith(os.path.join('cache', 'Images', '2003', '01', '01'))
     assert alt['alternative_file_name'].endswith('_alt_1200.jpg')
     assert os.path.exists(os.path.join(catalog.target_directory, alt['alternative_file_path']))
-    assert row['events'] == []                        # detached, for the rebuild to place
+    assert row['events'] == []                        # no Auto event near 2003: waits for the rebuild
 
     conn = _db(catalog)
     q = conn.execute('SELECT * FROM workflow_queue WHERE id = ?', (batch['queue_id'],)).fetchone()
     assert q['workflow_id'] == wf                     # found by script, not by name
     assert q['trigger_source'] == 'date_change'
+    assert q['status'] == 'queued'
+    assert json.loads(q['trigger_detail'])['nightly'] is True
+    assert _is_tonight(q['not_before'])
     assert conn.execute('SELECT file_count FROM events WHERE id = ?',
                         (event,)).fetchone()['file_count'] == 0
     conn.close()
@@ -361,6 +383,88 @@ def test_a_catalog_without_create_events_still_places_every_file(client, catalog
     assert len(_row(catalog, a)['events']) == 1
 
 
+# ─── Create Events waits for the night (owner, 2026-11-05) ────────────────────
+
+def test_date_changes_add_no_second_create_events(client, catalog):
+    a = _add_file(catalog, 'a.jpg')
+    b = _add_file(catalog, 'b.jpg', sha='0000000002')
+    _add_create_events_workflow(catalog)
+    first = _wait(client, _post(client, [
+        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
+    second = _wait(client, _post(client, [
+        {'file_ids': [b], 'datetime': '2004-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
+    r = client.put(f'/api/catalogs/1/photos/{a}/date',
+                   json={'datetime': '2005-01-01T12:00', 'timezone': NY})
+    rows = _queue_rows(catalog)
+    assert len(rows) == 1
+    assert first['queue_id'] == second['queue_id'] == r.get_json()['events_rebuild']['queue_id'] == rows[0]['id']
+    assert _is_tonight(rows[0]['not_before'])
+    assert json.loads(rows[0]['trigger_detail'])['coalesced'] == 3
+
+
+def test_a_create_events_already_due_is_joined_and_not_postponed(client, catalog):
+    a = _add_file(catalog, 'a.jpg')
+    wf = _add_create_events_workflow(catalog)
+    conn = _db(catalog)
+    due = conn.execute(
+        "INSERT INTO workflow_queue (workflow_id, workflow_name, script_name, status, position, "
+        "trigger_source, coalesce_key) VALUES (?, 'Create Events', 'ev_extract_events.py', "
+        "'queued', 1, 'import_completed', ?)", (wf, str(wf))).lastrowid
+    conn.commit()
+    conn.close()
+    batch = _wait(client, _post(client, [
+        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
+    assert batch['queue_id'] == due
+    assert batch['result']['rebuild_status'] == 'queued'
+    assert batch['result']['rebuild_at'] is None
+    rows = _queue_rows(catalog)
+    assert len(rows) == 1 and rows[0]['not_before'] is None
+
+
+def test_a_running_create_events_still_gets_a_night_run_after_it(client, catalog):
+    """A run already under way may have read the old dates: queue tonight's."""
+    a = _add_file(catalog, 'a.jpg')
+    wf = _add_create_events_workflow(catalog)
+    conn = _db(catalog)
+    conn.execute(
+        "INSERT INTO workflow_queue (workflow_id, workflow_name, script_name, status, position, "
+        "trigger_source, coalesce_key) VALUES (?, 'Create Events', 'ev_extract_events.py', "
+        "'running', 1, 'manual', ?)", (wf, str(wf)))
+    conn.commit()
+    conn.close()
+    batch = _wait(client, _post(client, [
+        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
+    assert batch['result']['rebuild_status'] == 'scheduled'
+    assert [r['status'] for r in _queue_rows(catalog)] == ['running', 'queued']
+
+
+def test_until_the_night_a_file_joins_a_nearby_auto_event_but_never_a_manual_one(client, catalog):
+    a = _add_file(catalog, 'a.jpg')
+    b = _add_file(catalog, 'b.jpg', sha='0000000002')
+    _add_create_events_workflow(catalog)
+    auto = _add_event(catalog, [], kind='Auto', start='2003-01-01 17:00:00')
+    _add_event(catalog, [], kind='Manual', start='2004-01-01 17:00:00')
+    _wait(client, _post(client, [
+        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY},
+        {'file_ids': [b], 'datetime': '2004-01-01T12:00', 'timezone': NY},
+    ]).get_json()['batch_id'])
+    assert _row(catalog, a)['events'] == [auto]
+    assert _row(catalog, b)['events'] == []          # the Manual one would keep it for good
+    conn = _db(catalog)
+    assert conn.execute('SELECT COUNT(*) FROM events').fetchone()[0] == 2   # none created
+    conn.close()
+
+
+def test_running_it_now_from_the_queue_clears_the_wait(client, catalog, app_module):
+    a = _add_file(catalog, 'a.jpg')
+    _add_create_events_workflow(catalog)
+    batch = _wait(client, _post(client, [
+        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
+    ok, _ = app_module.workflow_scheduler.run_now(app_module._queue_db_path(catalog), batch['queue_id'])
+    assert ok
+    assert _queue_rows(catalog)[0]['not_before'] is None
+
+
 def test_a_running_import_makes_the_catalog_busy(client, catalog, app_module):
     a = _add_file(catalog, 'a.jpg')
     conn = _db(catalog)
@@ -382,12 +486,25 @@ def test_a_running_import_makes_the_catalog_busy(client, catalog, app_module):
 
 # ─── Following a batch ────────────────────────────────────────────────────────
 
-def test_the_batch_completes_when_its_create_events_run_does(client, catalog, app_module):
-    a = _add_file(catalog, 'a.jpg')
-    _add_create_events_workflow(catalog)
-    batch = _wait(client, _post(client, [
-        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
-    assert batch['status'] == 'rebuilding'
+def _rebuilding_batch(catalog):
+    """A batch from before v6.7.2, which waited for an immediate Create Events
+    run: such rows may still be 'rebuilding' after the upgrade."""
+    wf = _add_create_events_workflow(catalog)
+    conn = _db(catalog)
+    qid = conn.execute(
+        "INSERT INTO workflow_queue (workflow_id, workflow_name, script_name, status, position, "
+        "trigger_source, coalesce_key) VALUES (?, 'Create Events', 'ev_extract_events.py', "
+        "'running', 1, 'date_change', ?)", (wf, str(wf))).lastrowid
+    bid = conn.execute(
+        "INSERT INTO date_change_batches (status, file_ids, total, done, queue_id, result_json) "
+        "VALUES ('rebuilding', '[1]', 1, 1, ?, '{}')", (qid,)).lastrowid
+    conn.commit()
+    conn.close()
+    return {'id': bid, 'queue_id': qid}
+
+
+def test_a_rebuilding_batch_completes_when_its_create_events_run_does(client, catalog, app_module):
+    batch = _rebuilding_batch(catalog)
 
     # The scheduler's hook, as it calls it when the queue row is reaped.
     app_module._finish_rebuilding_batches(catalog, batch['queue_id'], 'completed')
@@ -398,10 +515,7 @@ def test_the_batch_completes_when_its_create_events_run_does(client, catalog, ap
 
 
 def test_a_finished_queue_row_is_noticed_on_read(client, catalog):
-    a = _add_file(catalog, 'a.jpg')
-    _add_create_events_workflow(catalog)
-    batch = _wait(client, _post(client, [
-        {'file_ids': [a], 'datetime': '2003-01-01T12:00', 'timezone': NY}]).get_json()['batch_id'])
+    batch = _rebuilding_batch(catalog)
     conn = _db(catalog)
     conn.execute("UPDATE workflow_queue SET status = 'failed' WHERE id = ?", (batch['queue_id'],))
     conn.commit()
@@ -471,6 +585,7 @@ def test_the_single_photo_endpoint_behaves_as_before(client, catalog):
     assert body['file_renamed'] is True
     assert body['event_action'] == 'new_event_created'
     assert _row(catalog, a)['events'] == [body['event_id']] != [event]
+    assert body['events_rebuild'] is None             # this catalog has no Create Events
 
     clash = os.path.join(catalog.target_directory, 'Images', '2003', '01', '01',
                          '20030101120000-0000000002-b.jpg')

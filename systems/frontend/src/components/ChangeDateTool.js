@@ -13,8 +13,8 @@ import { formatDayShort, formatDayTitle, formatTime12, parseWallTime } from '../
 // saved-search-tools-spec.md section 5. A card in a saved search's tool panel:
 // every selected file gets a new date through the same batch the event date
 // editor uses (POST /photos/dates), so each file is renamed, moved and
-// regrouped into events exactly as a one-photo Edit date would do, with one
-// Create Events run for the whole batch.
+// regrouped into events by one Create Events run for the whole batch, which
+// waits for the night.
 
 // The batch endpoint's own cap (DATE_BATCH_MAX_FILES, section 5.1).
 export const MAX_FILES = 5000;
@@ -173,8 +173,10 @@ const ChangeDateTool = ({
             </li>
             <li>Any RAW or JPG partner of these files changes with it.</li>
             <li>
-              <strong>Create Events then runs for the catalog</strong>, so these photos join the events of
-              their new date. Events may be split, merged or replaced, and automatic events get new ids.
+              <strong>Create Events runs for the catalog tonight</strong>, so these photos join the events of
+              their new date. Until then each joins a nearby automatic event, if there is one. Events may be
+              split, merged or replaced, and automatic events get new ids. To rebuild them sooner, run Create
+              Events from the Workflows page.
             </li>
             <li>There is no undo. To go back, change the dates again.</li>
           </ul>

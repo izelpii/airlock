@@ -13,6 +13,7 @@ import { describeQuery } from './SavedSearches';
 import SavedSearchTools, { isVideoType } from '../components/SavedSearchTools';
 import useMarquee, { previewChecked } from '../hooks/useMarquee';
 import useDateBatch, { isTerminal } from '../hooks/useDateBatch';
+import { describeEventsRebuild } from '../utils/eventsRebuild';
 
 // ─── One saved search ─────────────────────────────────────────────────────────
 // documentation/architecture/search-spec.md section 7.4, and the tool panel of
@@ -56,12 +57,14 @@ const DateBatchBanner = ({ batch, onDismiss }) => {
     );
   }
   const ok = batch.status === 'completed';
+  const rebuild = ok ? describeEventsRebuild(batch.result?.rebuild_status, batch.result?.rebuild_at) : '';
   return (
     <CAlert color={ok && !failed.length ? 'success' : 'warning'} dismissible onClose={onDismiss}
             data-testid="date-batch-banner">
       {ok
         ? <>Done. {plural(updated, 'date', 'dates')} changed.</>
         : <>The date change {batch.status === 'interrupted' ? 'was interrupted' : 'failed'} after {batch.done || 0} of {total}.</>}
+      {rebuild && <> {rebuild}</>}
       {failed.length > 0 && (
         <>
           {' '}{plural(failed.length, 'file', 'files')} could not be changed and kept {failed.length === 1 ? 'its' : 'their'} date.{' '}

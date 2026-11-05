@@ -124,7 +124,7 @@ describe('the card', () => {
     await act(async () => { button().click(); });
     expect(document.body.textContent).toContain('Change the date of 2 photos and videos?');
     expect(document.body.textContent).toContain('each keeping its own time of day');
-    expect(document.body.textContent).toContain('Create Events then runs for the catalog');
+    expect(document.body.textContent).toContain('Create Events runs for the catalog tonight');
     expect(mockPosts).toHaveLength(0);                    // nothing before the confirmation
 
     await act(async () => { confirmButton().click(); });

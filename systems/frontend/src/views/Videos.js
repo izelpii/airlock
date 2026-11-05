@@ -17,6 +17,7 @@ import { getTimezoneOptions, getBrowserTimezone } from '../utils/timezones';
 import { API_HOST, galleryThumbUrl } from '../config';
 import { Filmstrip } from '../components/Filmstrip';
 import CatalogFileCard from '../components/CatalogFileCard';
+import { describeRebuildOf } from '../utils/eventsRebuild';
 
 // ─── Videos ───────────────────────────────────────────────────────────────────
 // documentation/specs/video-page-spec.md
@@ -400,9 +401,9 @@ const Videos = () => {
       // Follow the video to its new day. The id is unchanged, so the detail
       // effect will not refire on its own — and the events did change.
       selectVideo(updated, { fromUrl: true });
-      setDateSuccess(res.data.file_renamed
+      setDateSuccess(`${res.data.file_renamed
         ? 'Date updated. File has been renamed and moved.'
-        : 'Date updated.');
+        : 'Date updated.'} ${describeRebuildOf(res.data)}`.trim());
       photoAPI.getById(catalogId, updated.id)
         .then((detail) => setVideoDetail(detail.data))
         .catch(() => {});

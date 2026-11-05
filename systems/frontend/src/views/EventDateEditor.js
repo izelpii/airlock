@@ -392,7 +392,8 @@ const EventDateEditor = () => {
           </p>
           <p className="mb-0" style={{ fontSize: '0.88rem', color: '#555' }}>
             Files will be renamed and moved to their new date folders. Create Events
-            then runs, and this event may be split, merged or replaced.
+            runs tonight, and this event may then be split, merged or replaced. To
+            rebuild events sooner, run Create Events from the Workflows page.
           </p>
           {sendError && <CAlert color="warning" className="mt-3 mb-0">{sendError}</CAlert>}
         </CModalBody>
