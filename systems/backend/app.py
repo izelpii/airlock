@@ -3879,9 +3879,13 @@ def restore_backup(catalog_id, backup_id):
 
 # ── The schedule: Airlock starts each card's runs (backups.py docstring) ────
 
-def _import_running(catalog):
+def _backup_waits_for_import(catalog):
     """A run waits for an import - in move mode it deletes source files, and a
-    snapshot should not catch them half-moved (spec 8)."""
+    snapshot should not catch them half-moved (spec 8).
+
+    Named for backups on purpose: it was `_import_running` until v6.7.1, and the
+    date batches' `_import_running(conn)`, defined further down, replaced it.
+    Every scheduler tick then failed and no scheduled backup ran."""
     try:
         conn = sqlite3.connect(os.path.join(catalog.target_directory, 'workflow_results.db'),
                                timeout=10)
@@ -3906,7 +3910,7 @@ def _backup_scheduler_tick():
         if not backup_store.is_due(t) or backup_store.active(t['id']):
             continue
         catalog = Catalog.get_by_id(t['catalog_id'])
-        if not catalog or not catalog.target_directory or _import_running(catalog):
+        if not catalog or not catalog.target_directory or _backup_waits_for_import(catalog):
             continue
         print(f'[backup] scheduled run: {t["name"]} (catalog {t["catalog_id"]})')
         backup_store.start_backup(t, _backup_slug(catalog), catalog.target_directory,

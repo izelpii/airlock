@@ -1548,14 +1548,21 @@ def resolve_per_photo_assignment(catalog_db_path: str) -> int:
     Marks the winning row with contextual_assigned = 1. The raw scores are left
     untouched, so the UI can show both the model's ranking and its resolution.
 
+    Everything is read and decided BEFORE anything is written, and only the
+    rows whose mark changes are written, by id, in one short transaction. This
+    used to open with an UPDATE of every score row (28 M on `family`) and then
+    read and sort them all inside that transaction, holding the catalog's write
+    lock for most of an hour: the scheduler could not record finished
+    workflows, and every edit in the app failed with "database is locked".
+
     Returns the number of assignments made.
     """
     conn = sqlite3.connect(catalog_db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    cursor.execute('UPDATE face_similarity_scores SET contextual_assigned = 0')
-
+    # Reads only: Python's sqlite3 opens no transaction for a SELECT, so no
+    # lock is held while these run, however long they take.
     cursor.execute(
         'SELECT fss.id, fss.query_face_detection_id AS face_id, fss.person_id, '
         '       fss.contextual_distance, fd.file_id '
@@ -1583,11 +1590,21 @@ def resolve_per_photo_assignment(catalog_db_path: str) -> int:
             taken_people.add(row['person_id'])
             assigned_ids.append(row['id'])
 
-    if assigned_ids:
-        cursor.executemany(
-            'UPDATE face_similarity_scores SET contextual_assigned = 1 WHERE id = ?',
-            [(i,) for i in assigned_ids])
-    conn.commit()
+    marked = {r[0] for r in conn.execute(
+        'SELECT id FROM face_similarity_scores WHERE contextual_assigned = 1')}
+    winners = set(assigned_ids)
+    to_clear = marked - winners
+    to_mark = winners - marked
+
+    # The only write, and a short one.
+    if to_clear or to_mark:
+        with conn:
+            conn.executemany(
+                'UPDATE face_similarity_scores SET contextual_assigned = 0 WHERE id = ?',
+                [(i,) for i in to_clear])
+            conn.executemany(
+                'UPDATE face_similarity_scores SET contextual_assigned = 1 WHERE id = ?',
+                [(i,) for i in to_mark])
     conn.close()
     return len(assigned_ids)
 

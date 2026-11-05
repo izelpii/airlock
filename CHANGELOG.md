@@ -14,6 +14,7 @@ such as added documentation; it counts from the release it sits on.
 
 ## 6.7
 
+- **v6.7.1** (2026-11-05) — Re-rank no longer locks the catalog; scheduled backups run again
 - **v6.7.0** (2026-11-05) — Saved searches get a tool panel; Change date
 
 ## 6.6
